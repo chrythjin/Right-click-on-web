@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Right-click on Web</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="title">
+      <section class="hero">
+        <p class="eyebrow">Right Click UNLOCKER</p>
+        <h1 id="title">Right-click on Web</h1>
+        <p class="subtitle">우클릭, 선택, 복사 방해를 일반적인 웹 상호작용으로 되돌립니다.</p>
+      </section>
+
+      <section class="status-card" aria-live="polite">
+        <div>
+          <p class="label">현재 상태</p>
+          <p id="statusText" class="status-text">상태 확인 중</p>
+        </div>
+        <button id="toggleButton" class="toggle-button" type="button" aria-pressed="true">
+          ON
+        </button>
+      </section>
+
+      <ul class="feature-list" aria-label="활성화되는 기능">
+        <li>우클릭 메뉴 복원</li>
+        <li>텍스트 선택 허용</li>
+        <li>복사/잘라내기 차단 완화</li>
+      </ul>
+
+      <p class="notice">DRM, 이미지·캔버스 텍스트, 강한 iframe 격리에서는 동작하지 않을 수 있습니다.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
