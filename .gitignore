@@ -1,0 +1,6 @@
+# Tool / runtime byproducts
+.serena/
+.omo/
+
+# Local history & backup (per project AGENTS.md)
+history/

@@ -16,15 +16,54 @@ const RIGHT_CLICK_ON_WEB = {
     'selectstart',
     'copy',
     'cut',
+    'paste',
     'dragstart',
+    'dragover',
+    'drop',
     'mousedown',
-    'mouseup'
+    'mouseup',
+    'touchstart',
+    'touchend',
+    'touchmove'
   ]
 };
 
 let enabled = true;
 let eventController = null;
 let observer = null;
+let stats = createStats();
+
+function createStats() {
+  const result = {
+    attributeRemovals: Object.fromEntries(
+      RIGHT_CLICK_ON_WEB.blockedAttributes.map((name) => [name, 0])
+    ),
+    eventInterceptions: Object.fromEntries(
+      RIGHT_CLICK_ON_WEB.blockedEvents.map((name) => [name, 0])
+    ),
+    overlaysNeutralized: 0
+  };
+  return result;
+}
+
+function resetStats() {
+  stats = createStats();
+  window.__rightClickOnWebStats = stats;
+}
+
+function bumpAttributeRemoval(attribute) {
+  const counter = stats.attributeRemovals[attribute];
+  if (typeof counter === 'number') {
+    stats.attributeRemovals[attribute] = counter + 1;
+  }
+}
+
+function bumpEventInterception(eventName) {
+  const counter = stats.eventInterceptions[eventName];
+  if (typeof counter === 'number') {
+    stats.eventInterceptions[eventName] = counter + 1;
+  }
+}
 
 function isEditableElement(target) {
   if (!(target instanceof Element)) {
@@ -34,12 +73,14 @@ function isEditableElement(target) {
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]'));
 }
 
-function allowBrowserDefault(event) {
-  if (isEditableElement(event.target)) {
-    return;
-  }
-
-  event.stopImmediatePropagation();
+function handleInterceptedEvent(eventName) {
+  return (event) => {
+    if (isEditableElement(event.target)) {
+      return;
+    }
+    bumpEventInterception(eventName);
+    event.stopImmediatePropagation();
+  };
 }
 
 function injectSelectionStyle() {
@@ -58,6 +99,14 @@ function injectSelectionStyle() {
       -moz-user-select: text !important;
       -ms-user-select: text !important;
       user-select: text !important;
+      -webkit-user-drag: auto !important;
+      -moz-user-drag: auto !important;
+      -webkit-touch-callout: default !important;
+    }
+    img, a {
+      -webkit-user-drag: auto !important;
+      -moz-user-drag: auto !important;
+      user-drag: auto !important;
     }
   `;
 
@@ -67,6 +116,24 @@ function injectSelectionStyle() {
 
 function removeSelectionStyle() {
   document.getElementById(RIGHT_CLICK_ON_WEB.styleId)?.remove();
+}
+
+function neutralizeBlockOverlay(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const declaredPosition = (element.style.position || '').toLowerCase().trim();
+  if (declaredPosition !== 'absolute' && declaredPosition !== 'fixed') {
+    return false;
+  }
+
+  if ((element.textContent || '').trim().length > 0) {
+    return false;
+  }
+
+  element.style.setProperty('pointer-events', 'none', 'important');
+  return true;
 }
 
 function removeBlockingAttributes(root = document) {
@@ -87,7 +154,11 @@ function removeBlockingAttributes(root = document) {
     for (const attribute of RIGHT_CLICK_ON_WEB.blockedAttributes) {
       if (element.hasAttribute(attribute)) {
         element.removeAttribute(attribute);
+        bumpAttributeRemoval(attribute);
       }
+    }
+    if (neutralizeBlockOverlay(element)) {
+      stats.overlaysNeutralized += 1;
     }
   }
 }
@@ -119,7 +190,7 @@ function addEventInterceptors() {
   eventController = new AbortController();
 
   for (const eventName of RIGHT_CLICK_ON_WEB.blockedEvents) {
-    document.addEventListener(eventName, allowBrowserDefault, {
+    document.addEventListener(eventName, handleInterceptedEvent(eventName), {
       capture: true,
       passive: false,
       signal: eventController.signal
@@ -132,6 +203,7 @@ function enableUnlocker() {
     return;
   }
 
+  resetStats();
   injectSelectionStyle();
   removeBlockingAttributes();
   addEventInterceptors();

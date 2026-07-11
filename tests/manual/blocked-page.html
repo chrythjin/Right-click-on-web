@@ -14,12 +14,64 @@
         line-height: 1.6;
       }
 
-      .blocked {
+      section {
+        margin: 24px 0;
         padding: 18px;
         border: 1px solid #d8d8d8;
         border-radius: 12px;
         background: #f6f6f6;
+      }
+
+      section .hint {
+        font-size: 13px;
+        color: #4a4a4a;
+        margin: 0 0 12px;
+      }
+
+      section.stage-blocked {
         user-select: none;
+      }
+
+      section .dropZone {
+        position: relative;
+        min-height: 80px;
+        padding: 12px;
+        border: 1px dashed #888;
+        background: #fff;
+      }
+
+      .overlayHost {
+        position: relative;
+        min-height: 60px;
+      }
+
+      .overlayBlocker {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 0, 0, 0.05);
+        z-index: 5;
+      }
+
+      img.testImg {
+        display: block;
+        max-width: 120px;
+        height: auto;
+        background: #cfd;
+        padding: 6px;
+        border-radius: 6px;
+      }
+
+      .counterStrip {
+        margin: 24px 0;
+        padding: 12px;
+        background: #1f1f1f;
+        color: #ddd;
+        border-radius: 12px;
+        font-family: Menlo, Consolas, monospace;
+        font-size: 13px;
       }
 
       button {
@@ -30,14 +82,67 @@
   </head>
   <body oncontextmenu="return false" onselectstart="return false" oncopy="return false">
     <h1>Manual blocked page</h1>
-    <p>확장 ON 상태에서 아래 영역의 우클릭, 선택, 복사를 테스트하세요.</p>
+    <p>확장 ON 상태에서 아래 영역의 우클릭, 선택, 복사, 드래그, 모바일 길게 누르기를 테스트하세요.</p>
 
-    <section class="blocked" oncontextmenu="return false" oncopy="return false" ondragstart="return false">
+    <section id="counterPanel" class="counterStrip" hidden>
+      확장 실행 통계 (window.__rightClickOnWebStats):
+      <pre id="counterOutput" style="margin: 6px 0 0; white-space: pre-wrap;">통계 데이터 없음</pre>
+    </section>
+
+    <section class="stage-blocked" oncontextmenu="return false" oncopy="return false" ondragstart="return false">
+      <h2>1. 기본 차단 (우클릭 / 선택 / 복사 / 드래그)</h2>
+      <p class="hint">이 섹션의 본문 텍스트는 페이지 CSS(<code>user-select: none</code>)와 인라인 이벤트로 차단됩니다. 확장 ON 시 우클릭/선택/복사/드래그가 풀려야 합니다.</p>
       이 문장은 페이지 CSS와 inline event attribute로 선택/복사/우클릭이 막히도록 구성된 테스트 텍스트입니다.
     </section>
 
+    <section>
+      <h2>2. 이미지 드래그 저장 (<code>user-drag: none</code>)</h2>
+      <p class="hint">이 이미지는 <code>-webkit-user-drag: none; user-drag: none;</code> CSS로 데스크탑 드래그 저장이 차단됩니다. 확장 ON 시 이미지를 드래그해 데스크탑에 저장할 수 있어야 합니다.</p>
+      <img class="testImg"
+           src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Crect fill='%23ffd700' width='100' height='60'/%3E%3Ctext x='10' y='38' font-size='20' font-family='Arial' fill='%23111'%3EDRAG%3C/text%3E%3C/svg%3E"
+           alt="드래그 테스트용 이미지"
+           style="-webkit-user-drag: none; -moz-user-drag: none; user-drag: none;">
+    </section>
+
+    <section>
+      <h2>3. 텍스트 드롭 영역 (<code>dragover / drop</code>)</h2>
+      <p class="hint">아래 드롭 영역은 인라인 <code>ondragover</code>, <code>ondrop</code>으로 텍스트 드롭을 차단합니다. 확장 ON 시 외부에서 선택한 텍스트를 이 영역에 드롭할 수 있어야 합니다.</p>
+      <div class="dropZone"
+           ondragover="return false"
+           ondrop="return false">
+        여기로 텍스트를 드롭하세요. 드롭 시 페이지 측 경고가 나타나지 않고 정상적으로 텍스트가 떨어져야 합니다.
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 차단 오버레이 (<code>pointer-events</code> 무력화)</h2>
+      <p class="hint">아래 영역에는 페이지가 우클릭 차단을 위해 깔아둔 투명 오버레이 div가 있습니다. 확장 ON 시 오버레이가 무력화되어 아래 본문 텍스트를 우클릭/드래그할 수 있어야 합니다.</p>
+      <div class="overlayHost">
+        <p>오버레이 아래 본문 텍스트입니다. 여기 우클릭/드래그 가능해야 합니다.</p>
+        <div class="overlayBlocker"
+             oncontextmenu="return false"
+             onmousedown="return false"
+             onselectstart="return false"
+             ondragstart="return false"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. 모바일 터치 차단 (<code>touchstart</code> 등)</h2>
+      <p class="hint">모바일 Chrome에서 이미지/링크를 길게 누를 때 컨텍스트 메뉴(이미지 저장/링크 복사)가 차단됩니다. 이 영역은 인라인 <code>ontouchstart</code>로 차단됩니다. 모바일 실기기/모바일 에뮬레이션으로 테스트하세요.</p>
+      <img class="testImg"
+           src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Crect fill='%2387ceeb' width='100' height='60'/%3E%3Ctext x='10' y='38' font-size='20' font-family='Arial' fill='%23000'%3ETAP%3C/text%3E%3C/svg%3E"
+           alt="터치 테스트용 이미지"
+           ontouchstart="return false"
+           ontouchend="return false">
+    </section>
+
     <p id="dynamicTarget"></p>
-    <button id="addBlocker" type="button">동적 차단 요소 추가</button>
+    <p>
+      <button id="addBlocker" type="button">동적 차단 요소 추가</button>
+      <button id="addOverlay" type="button">동적 차단 오버레이 추가</button>
+      <button id="showStats" type="button">실행 통계 보기</button>
+    </p>
 
     <script>
       document.addEventListener('contextmenu', (event) => {
@@ -55,6 +160,34 @@
         element.setAttribute('oncopy', 'return false');
         element.textContent = '동적으로 추가된 차단 텍스트입니다. 선택과 복사를 테스트하세요.';
         document.getElementById('dynamicTarget').replaceChildren(element);
+      });
+
+      document.getElementById('addOverlay').addEventListener('click', () => {
+        const host = document.createElement('div');
+        host.className = 'overlayHost';
+        host.innerHTML = `
+          <p>동적으로 추가된 오버레이 아래 본문 텍스트입니다.</p>
+          <div class="overlayBlocker"
+               oncontextmenu="return false"
+               onmousedown="return false"
+               onselectstart="return false"
+               ondragstart="return false"></div>
+        `;
+        document.getElementById('dynamicTarget').replaceChildren(host);
+      });
+
+      document.getElementById('showStats').addEventListener('click', () => {
+        const panel = document.getElementById('counterPanel');
+        const out = document.getElementById('counterOutput');
+        const stats = window.__rightClickOnWebStats;
+        try {
+          out.textContent = stats
+            ? JSON.stringify(stats, null, 2)
+            : '통계 데이터 없음 (확장이 OFF이거나 로드 전)';
+        } catch (error) {
+          out.textContent = '통계 데이터 직렬화 오류';
+        }
+        panel.hidden = !panel.hidden;
       });
     </script>
   </body>
