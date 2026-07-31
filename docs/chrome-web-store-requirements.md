@@ -10,12 +10,13 @@
 |------|-----------|------|
 | **manifest 버전** | MV3 ✅ | |
 | **permissions** | `storage` ✅ | 사용자 설정만 저장 |
-| **host_permissions** | `<all_urls>` ⚠️ | 모든 페이지에서 동작 위해 필요 |
+| **host_permissions** | `<all_urls>` ⚠️ | 모든 페이지에서 동작 위해 필요 (설명 문구 준비됨) |
 | **아이콘** | `icons/icon128.png`, `icons/icon512.png` ✅ | PIL 생성, 레드/블랙/골드 디자인 |
-| **스크린샷** | ❌ 미준비 | 스토어 등록 전 필요 |
-| **개인정보처리방침** | ❌ 미준비 | 자체 호스팅 또는 제3자 사용 필요 |
-| **content script** | `content.js` ✅ | |
+| **스크린샷** | ❌ 미준비 | 스토어 등록 전 필요 (사용자 캡처) |
+| **개인정보처리방침** | 🔄 파일 작성 완료 (`docs/privacy-policy.html`) / 호스팅 URL 확보는 사용자 작업 | GitHub Pages 활성화 필요 |
+| **content script** | `content.js` + `content-main.js` ✅ | v0.2.0 듀얼 스크립트 (ISOLATED + MAIN world) |
 | **popup UI** | `popup.html/css/js` ✅ | |
+| **스토어 등록 정보** | ✅ 완료 (`docs/store-listing.md`) | 설명/카테고리/권한 사유/데이터 설문 복사본 |
 
 ---
 
@@ -88,11 +89,11 @@
 ## 4) 패키지 생성
 
 ```powershell
-# 이 명령을 repo 루트에서 실행
-Compress-Archive -Path manifest.json,background.js,content.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
+# 이 명령을 repo 루트에서 실행 (content-main.js 포함 필수 — v0.2.0 듀얼 스크립트)
+Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
 ```
 
-**제외할 항목**: `.git`, `.serena`, `docs`, `tests`, `popup-preview.html`, `README.md`
+**제외할 항목**: `.git`, `.serena`, `.omo`, `history`, `docs`, `tests`, `popup-preview.html`, `README.md`
 
 ---
 
@@ -101,12 +102,14 @@ Compress-Archive -Path manifest.json,background.js,content.js,popup.html,popup.c
 - [x] Manifest V3 준수 (`manifest_version: 3`)
 - [x] 최소 권한 (`storage` + `<all_urls>`만 사용)
 - [x] 아이콘 준비 (`icons/icon128.png`, `icons/icon512.png`)
-- [ ] 스크린샷 준비 (1장 이상)
-- [ ] 개인정보처리방침 URL 확보
-- [ ] 스토어 설명/상세 설명 작성
+- [x] 듀얼 콘텐츠 스크립트 (`content.js` + `content-main.js`) — ZIP에 반드시 포함
+- [x] 개인정보처리방침 파일 작성 (`docs/privacy-policy.html`)
+- [ ] 개인정보처리방침 URL 확보 (GitHub Pages 활성화 — 사용자 작업)
+- [ ] 스크린샷 준비 (1장 이상 — 사용자 작업)
+- [x] 스토어 설명/상세 설명 작성 (`docs/store-listing.md`)
 - [ ] ZIP 루트에 `manifest.json` 확인
-- [ ] 로컬 Load unpacked로 기능 테스트 완료
-- [ ] version 숫자 확인 (`manifest.json` 참고)
+- [ ] 로컬 Load unpacked로 기능 테스트 완료 (최종 QA)
+- [ ] version 숫자 확인 (`0.2.0` → 출시 전 `1.0.0` 권장, 선택)
 
 ---
 

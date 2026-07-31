@@ -49,11 +49,12 @@ graph TD
 프로젝트 루트 폴더(`c:\NEW PRG\Right-click-on-web`)에서 PowerShell을 열고 다음 명령어를 실행합니다.
 
 ```powershell
-Compress-Archive -Path manifest.json, background.js, content.js, popup.html, popup.css, popup.js, icons -DestinationPath "right-click-on-web.zip" -Force
+Compress-Archive -Path manifest.json, background.js, content.js, content-main.js, popup.html, popup.css, popup.js, icons -DestinationPath "right-click-on-web.zip" -Force
 ```
 
-* **포함 대상**: `manifest.json`, `background.js`, `content.js`, `popup.html`, `popup.css`, `popup.js`, `icons/`
-* **제외 대상**: `.git/`, `.serena/`, `docs/`, `tests/`, `README.md`, `popup-preview.html`
+* **포함 대상**: `manifest.json`, `background.js`, `content.js`, `content-main.js`, `popup.html`, `popup.css`, `popup.js`, `icons/`
+  - ⚠️ **`content-main.js` (MAIN world 패처) 반드시 포함** — v0.2.0 듀얼 스크립트 아키텍처의 핵심. 누락 시 페이지 차단 스크립트 무력화가 동작하지 않음.
+* **제외 대상**: `.git/`, `.serena/`, `.omo/`, `history/`, `docs/`, `tests/`, `README.md`, `popup-preview.html`
 
 압축 결과물인 `right-click-on-web.zip` 파일이 생성됩니다.
 

@@ -8,13 +8,13 @@
 
 | # | 작업 | 상태 |
 |---|------|------|
-| 1 | 스토어 제출 체크리스트 계획서 작성 | 🔄 지금 |
-| 2 | 스크린샷 캡처 (popup + 테스트 페이지) | ⬜ |
-| 3 | 개인정보처리방침 페이지 작성 + 호스팅 | ⬜ |
-| 4 | 스토어 설명 (짧은 설명 + 상세 설명) 작성 | ⬜ |
-| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | ⬜ |
-| 6 | ZIP 패키지 생성 및 최종 검증 | ⬜ |
-| 7 | Developer Dashboard 제출 준비 완료 | ⬜ |
+| 1 | 스토어 제출 체크리스트 계획서 작성 | ✅ 완료 |
+| 2 | 스크린샷 캡처 (popup + 테스트 페이지) | ⬜ 사용자 작업 필요 |
+| 3 | 개인정보처리방침 페이지 작성 + 호스팅 | 🔄 파일 작성 완료 (`docs/privacy-policy.html`) / GitHub Pages 호스팅은 사용자 작업 |
+| 4 | 스토어 설명 (짧은 설명 + 상세 설명) 작성 | ✅ 완료 (`docs/store-listing.md`) |
+| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | 🔄 카테고리=Productivity 결정, ZIP 명령에 content-main.js 반영 완료 / version 1.0.0 올리기는 출시 직전 선택 |
+| 6 | ZIP 패키지 생성 및 최종 검증 | ⬜ 명령 수정 완료, 패키지 생성 대기 |
+| 7 | Developer Dashboard 제출 준비 완료 | ⬜ 사용자 작업 ($5 계정 + 제출) |
 
 ---
 
@@ -140,8 +140,8 @@ assets/screenshots/test-page.png     # 1280x800 또는 640x400
 
 ### 패키지 명령
 ```powershell
-# repo 루트에서 실행
-Compress-Archive -Path manifest.json,background.js,content.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
+# repo 루트에서 실행 (content-main.js 포함 필수 — v0.2.0 듀얼 스크립트)
+Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
 ```
 
 ### 최종 검증 체크리스트
@@ -189,13 +189,13 @@ right-click-on-web.zip   # 스토어에 업로드할 패키지
 - [ ] 스크린샷 캡처 (popup + 테스트 페이지)
 
 ### 내가 진행할 수 있음 (자동화 가능)
-- [ ] 스토어 설명 HTML 작성 → `docs/`에 저장
-- [ ] manifest version `1.0.0`으로 올리기
-- [ ] ZIP 패키지 생성
+- [x] 스토어 설명 HTML 작성 → `docs/store-listing.md`에 저장
+- [ ] manifest version `1.0.0`으로 올리기 (출시 직전 결정)
+- [ ] ZIP 패키지 생성 (`content-main.js` 포함 명령 사용)
 - [ ] 체크리스트 문서 최종 동기화
 
 ### 순서
 ```
-2 (스크린샷) + 3 ( 개인정보처리방침)  →  4 (설명)  →  5 (manifest)  →  6 (ZIP)  →  7 (제출)
+2 (스크린샷) + 3 (개인정보처리방침 호스팅)  →  4 (설명 ✅)  →  5 (manifest)  →  6 (ZIP)  →  7 (제출)
 ```
-작업 2, 3은 사용자가 직접 해야 하고, 작업 4, 5, 6은 사용자가 스크린샷/URL을 제공하면 내가随即 진행합니다.
+작업 2, 3(호스팅), 7은 사용자가 직접 해야 하고, 작업 5(version), 6은 사용자가 스크린샷/URL을 제공하면 바로 진행합니다.

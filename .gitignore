@@ -1,6 +1,11 @@
 # Tool / runtime byproducts
 .serena/
 .omo/
+.cortexkit/
+.codegraph/
 
 # Local history & backup (per project AGENTS.md)
 history/
+
+# Generated store package (regenerate via documented Compress-Archive command)
+right-click-on-web.zip
