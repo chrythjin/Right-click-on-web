@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Restores common right-click, text selection, copy, and drag interactions on restrictive websites.",
   "action": {
     "default_title": "Right-click on Web",
@@ -19,8 +19,16 @@
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-main.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
     }
   ],
+  "minimum_chrome_version": "111",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"]
 }
