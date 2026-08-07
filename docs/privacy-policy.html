@@ -22,29 +22,52 @@
   </head>
   <body>
     <h1>개인정보처리방침</h1>
-    <p class="updated">최종 수정: 2026-07-31</p>
+    <p class="updated">최종 수정: 2026-08-08 (v0.4.0: Chrome Sync 항목 추가)</p>
 
-    <p><strong>Right-click on Web</strong> 확장 프로그램(이하 "본 확장")은 사용자의 개인정보를 수집·저장·가공·전송하지 않습니다. 본 정책은 사용자가 본 확장을 설치·사용하는 동안 어떤 데이터도 다루지 않음을 명시합니다.</p>
+    <p><strong>Right-click on Web</strong> 확장 프로그램(이하 "본 확장")은 사용자의 개인정보를 수집·저장·가공·전송하지 않습니다. 본 정책은 사용자가 본 확장을 설치·사용하는 동안 어떤 데이터가 어디에 저장되고 어떻게 처리되는지를 명시합니다.</p>
 
     <h2>1. 수집하는 정보</h2>
     <p>본 확장은 다음 정보를 <strong>수집하지 않습니다</strong>:</p>
     <ul>
-      <li>브라우징 기록, 방문한 웹사이트 주소(URL)</li>
-      <li>입력한 텍스트, 비밀번호, 결제 정보 등 사용자 입력 내용</li>
-      <li>쿠키, 로컬 스토리지(LocalStorage) 등 웹사이트 데이터</li>
-      <li>위치, 기기 식별자, 개인 식별 정보</li>
+      <li>브라우징 기록, 방문한 웹사이트의 페이지 내용, 마우스/키보드 입력</li>
+      <li>쿠키, 로컬 스토리지(LocalStorage), IndexedDB 등 웹사이트 데이터</li>
+      <li>위치, 기기 식별자, IP 주소, 광고 식별자</li>
+      <li>사용자 인증 정보, 결제 정보, 개인정보</li>
     </ul>
 
-    <h2>2. 데이터 저장</h2>
-    <p>본 확장이 저장하는 유일한 데이터는 확장의 <strong>ON/OFF 토글 설정 값</strong> 하나뿐이며, 이 값은 브라우저의 <code>chrome.storage.local</code>에만 로컬로 저장됩니다. 이 값은 사용자 기기 밖으로 전송되지 않으며, 확장을 제거하면 함께 삭제됩니다.</p>
+    <h2>2. 저장하는 데이터</h2>
+    <p>본 확장이 저장하는 데이터는 사용자가 직접 구성한 <strong>설정 값뿐</strong>이며, 페이지 내용·텍스트 선택·복사 내용 등은 절대 저장하지 않습니다.</p>
+    <ul>
+      <li><strong>전역 ON/OFF 플래그</strong> — 단일 boolean (기본값 <code>true</code>)</li>
+      <li><strong>도메인별 설정 목록</strong> — 사용자가 팝업에서 등록한 hostname 문자열과 각 도메인의 ON/OFF boolean</li>
+      <li><strong>세션 임시 활성화</strong> — 해당 hostname에 한해 이번 세션 동안 ON으로 강제 (브라우저 종료 시 자동 소멸)</li>
+    </ul>
 
-    <h2>3. 외부 전송</h2>
-    <p>본 확장은 <strong>어떠한 원격 서버로도 데이터를 전송하지 않습니다</strong>. 네트워크 요청, 텔레메트리, 광고 SDK, 분석 도구, 외부 코드 로딩이 전혀 포함되어 있지 않습니다.</p>
+    <h2>3. 저장 위치</h2>
+    <p>v0.4.0부터 설정 데이터는 다음 두 영역에 저장됩니다:</p>
+    <ul>
+      <li><strong><code>chrome.storage.local</code></strong> — 현재 기기에 로컬 저장. 항상 사용.</li>
+      <li><strong><code>chrome.storage.sync</code></strong> (Chrome Sync) — 사용자 Google 계정에 동기화하여 동일 Chrome 계정으로 로그인한 다른 기기에서도 동일 설정을 유지. <strong>Chrome Sync가 활성화된 경우에만 동작</strong>합니다.</li>
+    </ul>
+    <p>동기화되는 정보는 사용자가 직접 구성한 설정값(전역 boolean + 도메인 목록)뿐이며, 어떤 사용자 행동·페이지 내용·텍스트 입력·방문 기록도 포함되지 않습니다.</p>
 
-    <h2>4. 권한 안내</h2>
-    <p>본 확장은 모든 웹페이지에서 우클릭/선택/복사 차단 스크립트를 완화하기 위해 <code>&lt;all_urls&gt;</code> 호스트 권한을 사용합니다. 이 권한은 차단 요소를 실시간 감지·완화하는 기능을 위해서만 사용되며, 페이지 내용을 수집하거나 저장하는 데 사용되지 않습니다.</p>
+    <h2>4. 외부 전송</h2>
+    <p>본 확장은 <strong>자체 원격 서버로 데이터를 전송하지 않습니다</strong>. 네트워크 요청, 텔레메트리, 광고 SDK, 분석 도구, 외부 코드 로딩이 전혀 포함되어 있지 않습니다.</p>
+    <p>단, <code>chrome.storage.sync</code> 사용 시 설정 데이터는 Google의 Chrome Sync 인프라를 통해 Google 계정에 저장되며, 다른 로그인된 기기로 전파됩니다. 이는 Chrome 플랫폼이 제공하는 표준 동기화 메커니즘이며 본 확장이 별도로 전송하는 것은 아닙니다.</p>
 
-    <h2>5. 문의</h2>
-    <p>본 정책에 관한 문의는 <a href="https://github.com/chrythjin/Right-click-on-web/issues" rel="noopener noreferrer" target="_blank">GitHub Issues</a>로 연락해 주시기 바랍니다.</p>
+    <h2>5. 권한 안내</h2>
+    <p>본 확장은 다음 Chrome 권한을 사용합니다:</p>
+    <ul>
+      <li><code>storage</code> — 설정 저장 및 동기화</li>
+      <li><code>activeTab</code> — 팝업에서 현재 탭의 hostname 조회 (도메인별 설정 UI용)</li>
+      <li><code>&lt;all_urls&gt;</code> (호스트 권한) — 모든 웹페이지에서 우클릭/선택/복사 차단 스크립트를 완화하기 위함. 페이지 내용을 수집하거나 저장하는 데 사용되지 않습니다.</li>
+    </ul>
+
+    <h2>6. 동기화 비활성화</h6>
+    <p>동기화를 비활성화하려면 <code>chrome://settings/syncSetup</code>에서 "확장 프로그램" 항목을 끄거나, Chrome Sync 자체를 비활성화할 수 있습니다. 동기화가 비활성화된 경우 설정은 <code>chrome.storage.local</code>에만 저장되며 다른 기기로 전파되지 않습니다.</p>
+    <p>동기화 quota (Chrome 정책상 100KB / 기기당)가 초과된 경우 본 확장은 자동으로 <code>chrome.storage.local</code>에 데이터를 저장하며, 이는 사용자에게 팝업의 "동기화 사용량" 표시로 안내됩니다.</p>
+
+    <h2>7. 문의</h2>
+    <p>본 정책에 관한 문의는 <a href="https://github.com/chryth/Right-click-on-web/issues" rel="noopener noreferrer" target="_blank">GitHub Issues</a>로 연락해 주시기 바랍니다.</p>
   </body>
 </html>

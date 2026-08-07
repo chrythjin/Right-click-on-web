@@ -173,6 +173,51 @@
       <div id="shadowHostContainer"></div>
     </section>
 
+    <section>
+      <h2>9. 도메인별 ON/OFF (v0.3.0)</h2>
+      <p class="hint">이 페이지의 hostname은 <code id="section9Hostname">-</code> 입니다. 확장 아이콘을 클릭하여 현재 사이트 토글을 OFF로 변경한 뒤, 아래 영역을 우클릭/복사해 보세요. 도메인 OFF가 적용되면 차단이 풀리지 않아야 합니다. "실행 통계 보기" 패널의 <code>resolveSource</code>가 <code>"domain"</code>, <code>matchedDomain</code>이 현재 hostname인지 확인하세요.</p>
+      <ol>
+        <li>확장 팝업 열기 → "현재 사이트" 카드에서 도메인 토글 OFF 클릭</li>
+        <li>아래 영역 우클릭 → 컨텍스트 메뉴가 뜨지 않아야 함 (도메인 OFF 적용)</li>
+        <li>다시 도메인 토글 ON 클릭 → 컨텍스트 메뉴 다시 정상</li>
+      </ol>
+      <div class="dropZone" id="section9Target">
+        이 영역을 우클릭/복사 시도하여 도메인 토글 효과를 확인하세요.
+      </div>
+    </section>
+
+    <section>
+      <h2>10. 세션 임시 활성화 (v0.3.0)</h2>
+      <p class="hint">전역 OFF + 도메인 OFF 상태에서도, 확장 팝업의 "이번 세션만 임시 활성화" 버튼을 누르면 이 페이지에서만 우클릭 차단이 풀립니다. 탭을 닫거나 새로고침하면 자동으로 비활성화됩니다 (chrome.storage.session 특성).</p>
+      <ol>
+        <li>전역 토글 OFF</li>
+        <li>시나리오 9에서 도메인 토글 OFF</li>
+        <li>이 영역 우클릭 → 차단 (어떤 레이어도 ON이 아님)</li>
+        <li>팝업에서 "이번 세션만 임시 활성화" 클릭</li>
+        <li>이 영역 우클릭 → 풀림 (세션 레이어 우선)</li>
+        <li>탭 새로고침 → 다시 차단 (세션 스토리지는 유지되지만 content.js 재실행 시 재해석; 실제 동작은 session 키 보존 여부에 따라)</li>
+      </ol>
+      <div class="dropZone" id="section10Target">
+        이 영역에서 우클릭/복사를 시도하여 세션 모드 효과를 확인하세요.
+      </div>
+    </section>
+
+    <section>
+      <h2>11. Lite / Ultimate 모드 (v0.5.0)</h2>
+      <p class="hint">Ultimate는 CSS <code>user-select</code> 주입까지 모두 적용 (기본). Lite는 MAIN world 패치와 capture-phase 인터셉터만 적용 — 페이지의 <code>user-select</code> 스타일은 보존되지만 우클릭·복사·드래그 차단은 여전히 풀립니다.</p>
+      <ol>
+        <li>확장 팝업 → 현재 사이트에서 도메인 ON</li>
+        <li>모드 선택에서 "Lite" 클릭</li>
+        <li>아래 영역 우클릭 → 컨텍스트 메뉴 정상 (Lite도 작동)</li>
+        <li>아래 텍스트 선택 시도 → 페이지의 <code>user-select: none</code>이 살아있으면 선택 불가 (Lite의 차이점)</li>
+        <li>팝업에서 "Ultimate" 클릭 후 다시 시도 → 선택 가능 (CSS 주입 복원)</li>
+      </ol>
+      <div class="dropZone liteOnly" id="section11Target">
+        이 영역은 Lite 모드에서 user-select: none이 적용되어 선택이 차단됩니다. Ultimate로 전환하면 풀립니다.
+      </div>
+      <p>실행 통계의 <code>mode</code> 필드가 현재 적용 모드(<code>"lite"</code> 또는 <code>"ultimate"</code>)를 표시합니다.</p>
+    </section>
+
     <p id="dynamicTarget"></p>
     <p>
       <button id="addBlocker" type="button">동적 차단 요소 추가</button>
@@ -275,6 +320,12 @@
         }
         document.removeEventListener('visibilitychange', onVisibilityChange);
       });
+
+      // Section 9 — 도메인 hostname 표시
+      const section9HostnameEl = document.getElementById('section9Hostname');
+      if (section9HostnameEl) {
+        section9HostnameEl.textContent = window.location.hostname || '(http(s) 페이지가 아님 — 도메인 설정 불가)';
+      }
 
       // Section 8 — Closed Shadow DOM 강제 변환 검증
       class ClosedShadowHost extends HTMLElement {

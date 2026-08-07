@@ -1,0 +1,453 @@
+// Right-click on Web — shared helpers
+//
+// Loaded by content.js (content-script context), popup.js (popup context),
+// and background.js (service worker via importScripts). Provides pure
+// helpers + chrome.storage Promise wrappers shared across the three
+// execution surfaces.
+//
+// Why a shared module instead of duplicating?
+//   - DRY: resolveDomainKey/getHostname/isDomainEnabled must agree
+//     across the popup (decides what the user toggled), the content
+//     script (decides whether to apply unlocker), and the background
+//     service worker (decides whether to migrate defaults).
+//   - No build step in this project (per AGENTS.md): we ship plain
+//     <script> loads, so this file is one shared IIFE-style script
+//     that exposes a single window-scoped object.
+
+(function sharedInit() {
+  'use strict';
+
+  // Public suffix blocklist — minimal subset of common multi-part TLDs.
+  // Used as a safety net: even if a user accidentally registers "co.uk"
+  // in domainSettings, resolveDomainKey will skip it and continue
+  // searching for a more specific match.
+  //
+  // This is intentionally NOT the full Public Suffix List. Keeping it
+  // compact avoids a multi-MB PSL payload in a no-build extension.
+  // Coverage is biased toward the locales the README + UI ship in
+  // (Korean/English). If a real-world bug emerges for a TLD below,
+  // add the entry — do not switch to a runtime PSL library.
+  const PUBLIC_SUFFIX_BLOCKLIST = new Set([
+    // United Kingdom
+    'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'ltd.uk', 'plc.uk', 'me.uk', 'net.uk',
+    // Korea
+    'co.kr', 'ne.kr', 'or.kr', 're.kr', 'go.kr', 'pe.kr',
+    // Japan
+    'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp',
+    // Australia
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+    // Other multi-part TLDs the team has encountered
+    'co.nz', 'co.za', 'co.in', 'com.br', 'com.cn', 'com.tw', 'com.mx',
+    'com.sg', 'com.hk', 'com.tr', 'com.ar', 'com.pl'
+  ]);
+
+  // Maximum number of parent-domain hops to attempt when matching.
+  // Caps pathological inputs and prevents runaway recursion on
+  // malformed hostnames. Implemented as an iteration-count cap on
+  // the candidate walk. With this depth, hostnames with up to 7
+  // labels (e.g. `a.b.c.d.e.example.com`) will have their
+  // registrable domain (`example.com`) checked; 8+ label
+  // hostnames (6+ subdomains deep) will not, by design.
+  const MAX_DOMAIN_MATCH_DEPTH = 5;
+
+  // storage default shape — kept in lockstep with DEFAULT_SETTINGS in
+  // background.js and popup.js (legacy single-key shape).
+  const STORAGE_DEFAULTS = Object.freeze({
+    enabled: true,
+    domainSettings: Object.freeze({})
+  });
+
+  // ---- v0.5.0: Lite/Ultimate mode schema ----
+  //
+  // MODE constants and parseDomainSetting() were added in v0.5.0.
+  // Before v0.5.0 domainSettings stored a plain boolean per hostname;
+  // v0.5.0 changes the value shape to { enabled, mode }. Old entries
+  // are normalized by background.js's migrateDomainSettings() on
+  // install/update, but parseDomainSetting() also handles the live
+  // case where content script / popup encounter an unmigrated entry.
+  const MODE_LITE = 'lite';
+  const MODE_ULTIMATE = 'ultimate';
+  const DEFAULT_MODE = MODE_ULTIMATE;
+  const VALID_MODES = Object.freeze([MODE_LITE, MODE_ULTIMATE]);
+
+  // Normalize a raw domainSettings entry into { enabled, mode }.
+  // Used by background.js (mass migration) and by both the content
+  // script + popup for defensive reads. Returns:
+  //   true                          -> { enabled: true,  mode: 'ultimate' }
+  //   false                         -> { enabled: false, mode: 'ultimate' }
+  //   { enabled, mode: 'lite' }     -> same (with validation)
+  //   { enabled, mode: <unknown> }  -> mode falls back to DEFAULT_MODE
+  //   anything else                 -> { enabled: false, mode: DEFAULT_MODE }
+  function parseDomainSetting(value) {
+    if (value === true) {
+      return { enabled: true, mode: DEFAULT_MODE };
+    }
+    if (value === false) {
+      return { enabled: false, mode: DEFAULT_MODE };
+    }
+    if (value && typeof value === 'object') {
+      const enabled = value.enabled !== false;
+      const rawMode = typeof value.mode === 'string' ? value.mode : DEFAULT_MODE;
+      const mode = VALID_MODES.indexOf(rawMode) !== -1 ? rawMode : DEFAULT_MODE;
+      return { enabled, mode };
+    }
+    return { enabled: false, mode: DEFAULT_MODE };
+  }
+
+  const SESSION_KEY_PREFIX = 'session:';
+
+  function sessionKeyFor(hostname) {
+    if (!hostname) {
+      return null;
+    }
+    return SESSION_KEY_PREFIX + hostname;
+  }
+
+  // Safely extract hostname from a URL string. Returns '' for any
+  // non-http(s) scheme (chrome://, about:blank, file://, etc.) and
+  // for invalid URLs. Empty string signals "no host context" — callers
+  // should fall through to global enabled rather than try to resolve
+  // domain-specific settings against an empty/garbage hostname.
+  //
+  // Hostname is lowercased to match what domainSettings stores
+  // (popup.js normalizes before writing). Without this normalization,
+  // "Example.com" from the URL bar and "example.com" from a stored
+  // entry would fail to match.
+  function getHostname(href) {
+    if (typeof href !== 'string' || href.length === 0) {
+      return '';
+    }
+    let url;
+    try {
+      url = new URL(href);
+    } catch (_) {
+      return '';
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return '';
+    }
+    const host = url.hostname;
+    if (!host) {
+      return '';
+    }
+    return host.toLowerCase();
+  }
+
+  // Walk up the domain label hierarchy until we find a registered
+  // entry in domainSettings. Returns the matched key (longest/most-
+  // specific match wins), or null when no parent matches.
+  //
+  // Examples (assuming domainSettings = {"example.com": false}):
+  //   resolveDomainKey("example.com", {})  -> null
+  //   resolveDomainKey("example.com", {..}) -> "example.com"
+  //   resolveDomainKey("www.example.com", {..}) -> "example.com"
+  //   resolveDomainKey("a.b.c.example.com", {..}) -> "example.com"
+  //
+  // Public-suffix blocklist entries STOP the walk entirely (we do
+  // not return them and do not continue past them). This prevents
+  // a user from accidentally registering a top-level TLD entry
+  // like "uk": true or "com": false and having it apply to every
+  // site under that TLD. Once we hit "co.uk" or "com.au" in the
+  // walk, we break — the caller's domainSettings entry for those
+  // keys (if any) is ignored, and we never look at "uk" or "au".
+  function resolveDomainKey(hostname, domainSettings) {
+    if (!hostname || !domainSettings) {
+      return null;
+    }
+
+    const normalizedHostname = hostname.toLowerCase();
+    const parts = normalizedHostname.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+
+    let candidate = parts.join('.');
+    let depth = 0;
+
+    while (parts.length >= 2 && depth <= MAX_DOMAIN_MATCH_DEPTH) {
+      // Stop at public-suffix boundary — never match a PSL entry
+      // and never walk past it.
+      if (PUBLIC_SUFFIX_BLOCKLIST.has(candidate)) {
+        break;
+      }
+      if (Object.prototype.hasOwnProperty.call(domainSettings, candidate)) {
+        return candidate;
+      }
+      parts.shift();
+      candidate = parts.join('.');
+      depth += 1;
+    }
+    return null;
+  }
+
+  // Resolve whether the unlocker should be enabled for `hostname`,
+  // given the current global setting and the domainSettings map.
+  // Used by the popup for button-label decisions; the content
+  // script applies the same semantics inline in resolveEnabled().
+  //
+  // Semantics (mirrors user expectation):
+  //   global OFF + no domain entry      -> OFF (default)
+  //   global OFF + domain entry true    -> ON  (per-site override)
+  //   global OFF + domain entry false   -> OFF (explicit exception)
+  //   global ON  + no domain entry      -> ON  (default)
+  //   global ON  + domain entry true    -> ON
+  //   global ON  + domain entry false   -> OFF (per-site exception)
+  //
+  // Domain entries always win over the global flag when present;
+  // only the *absence* of a domain entry falls through to global.
+  //
+  // v0.5.0: accepts both the new `{ enabled, mode }` shape and the
+  // legacy plain-boolean shape. The defensive `boolean` branch
+  // tolerates any unmigrated entry the v0.5.0 migration missed; no
+  // caller-side normalization is required.
+  function isDomainEnabled(globalEnabled, domainSettings, hostname) {
+    if (!hostname) {
+      return globalEnabled !== false;
+    }
+    const matched = resolveDomainKey(hostname, domainSettings || {});
+    if (matched !== null) {
+      const entry = domainSettings[matched];
+      // Defensive: tolerate unmigrated boolean entries.
+      if (typeof entry === 'boolean') {
+        return entry !== false;
+      }
+      if (entry && typeof entry === 'object') {
+        return entry.enabled !== false;
+      }
+      return false;
+    }
+    return globalEnabled !== false;
+  }
+
+  // Resolve the effective mode for `hostname`. Returns 'lite',
+  // 'ultimate', or null when no domain entry applies. Used by
+  // content.js to decide whether to inject the CSS user-select
+  // override.
+  //
+  // Semantics:
+  //   no domain entry             -> null (caller falls back to DEFAULT_MODE)
+  //   domain entry boolean true   -> 'ultimate' (default mode)
+  //   domain entry boolean false  -> null (entry says "off"; mode irrelevant)
+  //   { enabled: true, mode }     -> mode
+  //   { enabled: false, mode }    -> null (caller should skip work entirely)
+  function resolveMode(hostname, domainSettings) {
+    if (!hostname) {
+      return null;
+    }
+    const matched = resolveDomainKey(hostname, domainSettings || {});
+    if (matched === null) {
+      return null;
+    }
+    const entry = domainSettings[matched];
+    if (typeof entry === 'boolean') {
+      return entry === true ? DEFAULT_MODE : null;
+    }
+    if (entry && typeof entry === 'object') {
+      if (entry.enabled === false) {
+        return null;
+      }
+      return entry.mode === MODE_LITE ? MODE_LITE : MODE_ULTIMATE;
+    }
+    return null;
+  }
+
+  // Walk a domainSettings map and replace every entry with the
+  // normalized { enabled, mode } object. Used by background.js to
+  // convert pre-v0.5.0 boolean entries en masse on install/update.
+  // Returns a new object — the input is not mutated.
+  function normalizeDomainSettings(domainSettings) {
+    const out = {};
+    if (!domainSettings || typeof domainSettings !== 'object') {
+      return out;
+    }
+    for (const host of Object.keys(domainSettings)) {
+      out[host] = parseDomainSetting(domainSettings[host]);
+    }
+    return out;
+  }
+
+  // Promise wrappers around chrome.storage callbacks. Content scripts
+  // and the popup prefer await syntax; service workers can use these
+  // too. Errors are propagated via lastError.
+  function storageGet(area, keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        area.get(keys, (result) => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            reject(err);
+          } else {
+            resolve(result);
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function storageSet(area, data) {
+    return new Promise((resolve, reject) => {
+      try {
+        area.set(data, () => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function storageRemove(area, keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        area.remove(keys, () => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  // Detect whether chrome.storage.session is available at runtime.
+  // Chrome 102+ supports it, but defensive checks keep the extension
+  // loadable on older Chromium builds (the minimum_chrome_version in
+  // manifest.json is 111, so this is purely belt-and-braces).
+  function isSessionStorageAvailable() {
+    try {
+      return Boolean(
+        chrome.storage &&
+        chrome.storage.session &&
+        typeof chrome.storage.session.get === 'function'
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---- v0.4.0: chrome.storage.sync helpers ----
+  //
+  // Sync quota (Chrome docs):
+  //   QUOTA_BYTES = 102_400  (total, across all items)
+  //   QUOTA_BYTES_PER_ITEM = 8_192  (8 KB per item)
+  //   MAX_ITEMS = 512
+  //   MAX_WRITE_OPERATIONS_PER_MINUTE = 1_800
+  //   MAX_SUSTAINED_WRITE_OPERATIONS_PER_MINUTE = 120
+  //
+  // Source: https://developer.chrome.com/docs/extensions/reference/api/storage#property-sync
+  const SYNC_QUOTA = Object.freeze({
+    BYTES_TOTAL: 102_400,
+    BYTES_PER_ITEM: 8_192,
+    MAX_ITEMS: 512
+  });
+
+  // Returns true when chrome.runtime.lastError or a rejected storage
+  // operation looks like a quota-related failure. Used by safeSyncSet
+  // to decide whether to fall back to chrome.storage.local.
+  function isQuotaExceeded(err) {
+    if (!err) {
+      return false;
+    }
+    const message = String((err && err.message) || err);
+    return /quota|MAX_ITEMS|MAX_WRITE_OPERATIONS|MAX_SUSTAINED/i.test(message);
+  }
+
+  // Wrapper around chrome.storage.getBytesInUse for the sync area.
+  // Returns 0 when the area is unavailable (e.g. sync disabled in
+  // chrome://settings) so callers don't need to special-case that.
+  function getBytesInUse(area) {
+    return new Promise((resolve) => {
+      try {
+        if (!area || typeof area.getBytesInUse !== 'function') {
+          resolve(0);
+          return;
+        }
+        area.getBytesInUse(null, (bytes) => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            resolve(0);
+          } else {
+            resolve(typeof bytes === 'number' ? bytes : 0);
+          }
+        });
+      } catch (_) {
+        resolve(0);
+      }
+    });
+  }
+
+  // Try writing to sync; on quota error fall back to local. Other
+  // errors propagate so callers can surface unexpected failures.
+  // Used by popup.js for every user-initiated write so the user's
+  // intent is never lost when sync quota runs out.
+  async function safeSyncSet(data, fallbackArea) {
+    try {
+      await storageSet(chrome.storage.sync, data);
+      return { area: 'sync' };
+    } catch (err) {
+      if (isQuotaExceeded(err) && fallbackArea) {
+        await storageSet(fallbackArea, data);
+        return { area: 'local', fallback: true, reason: err.message };
+      }
+      throw err;
+    }
+  }
+
+  // Read sync + local in parallel and merge with sync winning on
+  // conflict. Returns {} on total failure so callers can treat it
+  // as "no settings found".
+  async function resolveSettings(keys) {
+    const safe = (promise) => promise.then((v) => v).catch(() => ({}));
+    const [syncData, localData] = await Promise.all([
+      safe(storageGet(chrome.storage.sync, keys)),
+      safe(storageGet(chrome.storage.local, keys))
+    ]);
+    // sync wins — most recent cross-device state.
+    return Object.assign({}, localData, syncData);
+  }
+
+  // Single export — content.js and popup.js both access via
+  // window.RIGHT_CLICK_ON_WEB_SHARED.* (or the bare global in
+  // service-worker context where importScripts makes these top-level).
+  const exportObject = {
+    PUBLIC_SUFFIX_BLOCKLIST,
+    MAX_DOMAIN_MATCH_DEPTH,
+    STORAGE_DEFAULTS,
+    SESSION_KEY_PREFIX,
+    SYNC_QUOTA,
+    MODE_LITE,
+    MODE_ULTIMATE,
+    DEFAULT_MODE,
+    VALID_MODES,
+    sessionKeyFor,
+    getHostname,
+    resolveDomainKey,
+    isDomainEnabled,
+    resolveMode,
+    parseDomainSetting,
+    normalizeDomainSettings,
+    storageGet,
+    storageSet,
+    storageRemove,
+    isSessionStorageAvailable,
+    isQuotaExceeded,
+    getBytesInUse,
+    safeSyncSet,
+    resolveSettings
+  };
+
+  if (typeof globalThis !== 'undefined') {
+    globalThis.RIGHT_CLICK_ON_WEB_SHARED = exportObject;
+  }
+})();

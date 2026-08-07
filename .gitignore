@@ -3,6 +3,7 @@
 .omo/
 .cortexkit/
 .codegraph/
+.opencode/
 
 # Local history & backup (per project AGENTS.md)
 history/

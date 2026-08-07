@@ -1,3 +1,24 @@
+// Right-click on Web — ISOLATED-world content script
+//
+// Runs at document_start in the extension's isolated JS context.
+// Handles DOM cleanup, attribute removal, capture-phase event
+// interceptors, MutationObserver, periodic rescan, and shadow-root
+// recursion. Shared helpers (hostname parsing, domain matching,
+// storage promises) come from shared.js, loaded just before this
+// file via manifest.json content_scripts[0].js.
+//
+// v0.3.0 additions:
+//   - async resolveEnabled() resolves the active state from
+//     session (Chrome session storage, transient) > local
+//     domainSettings > global enabled.
+//   - resolveAndApply() coalesces concurrent re-resolves into a
+//     single in-flight promise (race-condition guard).
+//   - chrome.storage.onChanged listens to BOTH 'local' and 'session'
+//     storage areas so domain toggles, session toggles, and global
+//     toggles all trigger a re-resolve.
+
+const SHARED = globalThis.RIGHT_CLICK_ON_WEB_SHARED;
+
 const RIGHT_CLICK_ON_WEB = {
   styleId: 'right-click-on-web-style',
   markerAttribute: 'data-right-click-on-web',
@@ -34,6 +55,7 @@ const RIGHT_CLICK_ON_WEB = {
 
 let enabled = true;
 let isActive = false;
+let currentMode = SHARED.DEFAULT_MODE;
 let eventController = null;
 let observer = null;
 let shadowObservers = [];
@@ -51,7 +73,14 @@ function createStats() {
     ),
     overlaysNeutralized: 0,
     shadowRootsScanned: 0,
-    periodicRescans: 0
+    periodicRescans: 0,
+    // Resolution diagnostics — surfaces which layer (session, domain,
+    // global) decided the current state, and which mode (lite /
+    // ultimate) is currently applied. Useful for QA + the manual
+    // test page.
+    resolveSource: 'initial',
+    matchedDomain: null,
+    mode: SHARED.DEFAULT_MODE
   };
   return result;
 }
@@ -384,7 +413,14 @@ function enableUnlocker() {
   }
 
   resetStats();
-  injectSelectionStyle();
+  // v0.5.0: only inject CSS in ultimate mode. In lite mode the page
+  // gets only the MAIN-world prototype patches (which already ran
+  // at document_start) and the capture-phase interceptors below —
+  // no user-select style override, so the page's own user-select
+  // rules are preserved.
+  if (currentMode === SHARED.MODE_ULTIMATE) {
+    injectSelectionStyle();
+  }
   removeBlockingAttributes();
   addEventInterceptors();
   observeBlockingChanges();
@@ -413,8 +449,16 @@ function disableUnlocker() {
   isActive = false;
 }
 
-function setEnabled(nextEnabled) {
+// v0.5.0: setEnabled now also takes the resolved mode so the
+// unlocker knows whether to inject the CSS override. Pass
+// SHARED.DEFAULT_MODE when not using a domain-specific mode.
+function setEnabled(nextEnabled, nextMode) {
   enabled = nextEnabled;
+  if (nextMode === SHARED.MODE_LITE || nextMode === SHARED.MODE_ULTIMATE) {
+    currentMode = nextMode;
+  } else {
+    currentMode = SHARED.DEFAULT_MODE;
+  }
 
   if (enabled) {
     enableUnlocker();
@@ -423,14 +467,157 @@ function setEnabled(nextEnabled) {
   }
 }
 
-chrome.storage.local.get({ enabled: true }, (settings) => {
-  setEnabled(settings.enabled !== false);
-});
+// ---------------------------------------------------------------------------
+// v0.3.0 — multi-layer resolution (session > domain > global)
+// ---------------------------------------------------------------------------
+//
+// resolveEnabled() reads three storage layers in priority order and
+// returns { enabled, source, matchedKey, hostname } so callers can
+// surface diagnostics if they wish. Order matches the popup's UI
+// copy and is documented in AGENTS.md NOTES.
+//
+// Edge cases handled:
+//   - Non-http(s) URL → hostname is ''; falls through to global.
+//   - Session storage unavailable (older Chromium, dev builds) → skip.
+//   - Domain settings entry for a public-suffix key → resolveDomainKey
+//     skips and walks further (handled in shared.js).
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'local' || !changes.enabled) {
-    return;
+async function resolveEnabled() {
+  const hostname = SHARED.getHostname(window.location.href);
+
+  // 1) Session layer — temporary per-hostname override. Wins over
+  //    everything because the user explicitly asked for "this session
+  //    only" and that intent is narrower than the persistent domain
+  //    setting. Session always implies ultimate mode.
+  if (hostname && SHARED.isSessionStorageAvailable()) {
+    const key = SHARED.sessionKeyFor(hostname);
+    try {
+      const sessionData = await SHARED.storageGet(chrome.storage.session, key);
+      if (sessionData[key] === true) {
+        return {
+          enabled: true,
+          source: 'session',
+          hostname,
+          matchedKey: null,
+          mode: SHARED.MODE_ULTIMATE
+        };
+      }
+    } catch (_) {
+      // Quota or transient read failure — fall through to local.
+    }
   }
 
-  setEnabled(changes.enabled.newValue !== false);
+  // 2) Domain + global layer — single round-trip covers both.
+  // v0.4.0: read sync + local in parallel; sync wins on conflict.
+  // Falls back to local only when sync fails (e.g. sync disabled).
+  let settings;
+  try {
+    settings = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
+  } catch (_) {
+    // Storage fully unavailable — leave current state untouched and
+    // bail. We do not flip to false just because storage hiccupped.
+    return null;
+  }
+  const globalEnabled = settings.enabled !== false;
+  const domainSettings = settings.domainSettings || {};
+
+  if (hostname) {
+    const matchedKey = SHARED.resolveDomainKey(hostname, domainSettings);
+    if (matchedKey !== null) {
+      const entry = domainSettings[matchedKey];
+      // Defensive: tolerate unmigrated boolean entries.
+      let entryEnabled = false;
+      if (typeof entry === 'boolean') {
+        entryEnabled = entry !== false;
+      } else if (entry && typeof entry === 'object') {
+        entryEnabled = entry.enabled !== false;
+      }
+      const mode = SHARED.resolveMode(hostname, domainSettings) || SHARED.DEFAULT_MODE;
+      return {
+        enabled: entryEnabled,
+        source: 'domain',
+        hostname,
+        matchedKey,
+        mode
+      };
+    }
+  }
+
+  return {
+    enabled: globalEnabled,
+    source: hostname ? 'global' : 'global-no-host',
+    hostname,
+    matchedKey: null,
+    mode: SHARED.DEFAULT_MODE
+  };
+}
+
+// Race-condition guard: when storage.onChanged fires multiple times
+// in quick succession (e.g. user toggles global + domain in the
+// popup within a tick), we coalesce into a single in-flight resolve.
+// Returns the existing promise so callers can await it if needed.
+let resolvePromise = null;
+function resolveAndApply() {
+  if (resolvePromise) {
+    return resolvePromise;
+  }
+  resolvePromise = (async () => {
+    try {
+      const result = await resolveEnabled();
+      if (!result) {
+        return;
+      }
+      // Surface the decision on the public stats object so the
+      // manual test page and any future debugging UI can show
+      // *why* the unlocker is on or off.
+      try {
+        if (window.__rightClickOnWebStats) {
+          window.__rightClickOnWebStats.resolveSource = result.source;
+          window.__rightClickOnWebStats.matchedDomain = result.matchedKey;
+          window.__rightClickOnWebStats.mode = result.mode || SHARED.DEFAULT_MODE;
+        }
+      } catch (_) {
+        // Stats object may not exist yet — safe to ignore.
+      }
+      setEnabled(result.enabled, result.mode);
+    } catch (_) {
+      // Defensive — resolveEnabled already catches its own errors,
+      // but a bug in stats surface code must not break the unlocker.
+    } finally {
+      resolvePromise = null;
+    }
+  })();
+  return resolvePromise;
+}
+
+// Initial resolve. We do NOT run a synchronous inline-attribute scrub
+// here: the MAIN-world addEventListener patch (content-main.js) runs
+// before any page script can register preventDefault listeners, so
+// the worst-case race is brief inline-attribute blocking that gets
+// scrubbed as soon as the async resolve completes (typically <50ms).
+resolveAndApply();
+
+// Storage listener — handles every layer that could flip the
+// decision. Re-resolves whenever:
+//   - `local.enabled` changes
+//   - `local.domainSettings` changes (added/removed/edited)
+//   - `sync.enabled` or `sync.domainSettings` changes (v0.4.0)
+//   - any `session.*` key changes (per-hostname session toggle)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  let shouldResolve = false;
+
+  if (areaName === 'local' || areaName === 'sync') {
+    if (changes.enabled || changes.domainSettings) {
+      shouldResolve = true;
+    }
+  } else if (areaName === 'session') {
+    // Any session key change could be the session toggle for *this*
+    // hostname or for a different hostname. Resolving is cheap, so
+    // we just re-resolve.
+    shouldResolve = true;
+  }
+
+  if (shouldResolve) {
+    resolveAndApply();
+  }
 });
