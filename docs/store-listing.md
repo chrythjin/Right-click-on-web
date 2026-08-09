@@ -1,4 +1,4 @@
-# Chrome Web Store 등록 정보 (v0.6.0 → 스토어 출시용)
+# Chrome Web Store 등록 정보 (v0.6.1 스토어 출시용)
 
 > 이 문서는 Developer Dashboard 입력용 최종 복사본입니다. 각 항목을 대시보드에 그대로 붙여넣으면 됩니다.
 > ZIP 패키징 시 반드시 `content-main.js`를 포함하세요 (듀얼 스크립트 아키텍처 — AGENTS.md 참조).
@@ -10,7 +10,7 @@
 | 항목 | 값 |
 |------|-----|
 | **이름 (Name)** | Right-click on Web |
-| **버전 (Version)** | 0.6.0 (스토어 출시 전 `1.0.0` 승격 여부 결정) |
+| **버전 (Version)** | 0.6.1 |
 | **카테고리** | 생산성 (Productivity) |
 | **언어** | 한국어 (+ 영어 manifest description) |
 | **단일 목적 (Single Purpose)** | 웹페이지의 우클릭·드래그 선택·복사 차단 스크립트 완화 |
@@ -82,8 +82,8 @@
 ## 6. 개인정보처리방침 (Privacy Policy)
 
 - 파일: `docs/privacy-policy.html` (repo 내 작성 완료)
-- 호스팅: GitHub Pages 활성화 필요 (repo Settings → Pages → `docs/` 루트)
-- 예상 URL: `https://chrythjin.github.io/Right-click-on-web/privacy-policy.html`
+- 호스팅: GitHub Pages (`docs/` 루트) 활성화 완료
+- 공개 URL: `https://chrythjin.github.io/Right-click-on-web/privacy-policy.html`
 
 ---
 
@@ -92,7 +92,7 @@
 | 파일 | 규격 | 상태 |
 |------|------|------|
 | `assets/screenshots/popup-ui.png` | 1280×800 또는 640×400 PNG | ❌ 캡처 필요 |
-| `assets/screenshots/test-page.png` | 1280×800 또는 640×400 PNG | ❌ 캡처 필요 |
+| `assets/screenshots/test-page.png` | 1280×800 PNG | ✅ 제출 가능 |
 
 캡처 방법: Load unpacked → popup 열기 (Win+Shift+S), `tests/manual/blocked-page.html` 열어 확장 ON 상태에서 캡처.
 
@@ -101,7 +101,7 @@
 ## 8. ZIP 패키징 명령 (content-main.js 포함 — 필수!)
 
 ```powershell
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.1.zip" -Force
 ```
 
 **제외**: `.git`, `.serena`, `.omo`, `history`, `docs`, `tests`, `popup-preview.html`, `README.md`
@@ -111,12 +111,12 @@ Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-
 ## 9. 제출 전 최종 체크리스트
 
 - [x] Manifest V3 (`manifest_version: 3`)
-- [x] 권한 최소화 (`storage` + `<all_urls>` 호스트 권한)
+- [x] 권한 최소화 (`storage`, `activeTab`, `contextMenus`, `sidePanel` + `<all_urls>` 호스트 권한)
 - [x] 아이콘 (`icons/icon128.png`, `icons/icon512.png`)
 - [x] 듀얼 콘텐츠 스크립트 (`content.js` + `content-main.js` — 둘 다 manifest에 선언)
 - [x] 개인정보처리방침 파일 작성 (`docs/privacy-policy.html`)
-- [ ] 개인정보처리방침 URL 확보 (GitHub Pages 활성화 — 사용자 작업)
-- [ ] 스크린샷 1장 이상 (사용자 작업)
-- [ ] ZIP 패키지 생성 + 검증
-- [ ] version `1.0.0`으로 올리기 (권장, 선택)
-- [ ] Developer Dashboard 등록 ($5 — 사용자 작업)
+- [x] 개인정보처리방침 URL 공개 확인
+- [x] 스크린샷 1장 이상 (`assets/screenshots/test-page.png`, 1280×800)
+- [x] ZIP 패키지 생성 + 검증 (`right-click-on-web-v0.6.1.zip`)
+- [x] 출시 버전 `0.6.1` 확정
+- [ ] Developer Dashboard 등록 및 제출

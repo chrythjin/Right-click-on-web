@@ -9,12 +9,12 @@
 | # | 작업 | 상태 |
 |---|------|------|
 | 1 | 스토어 제출 체크리스트 계획서 작성 | ✅ 완료 |
-| 2 | 스크린샷 캡처 (popup + 테스트 페이지) | ⬜ 사용자 작업 필요 |
-| 3 | 개인정보처리방침 페이지 작성 + 호스팅 | 🔄 파일 작성 완료 (`docs/privacy-policy.html`) / GitHub Pages 호스팅은 사용자 작업 |
+| 2 | 스크린샷 캡처 (popup + 테스트 페이지) | ✅ 제출용 `assets/screenshots/test-page.png` 1280×800 확보 |
+| 3 | 개인정보처리방침 페이지 작성 + 호스팅 | ✅ GitHub Pages 공개 URL 확인 |
 | 4 | 스토어 설명 (짧은 설명 + 상세 설명) 작성 | ✅ 완료 (`docs/store-listing.md`) |
-| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | 🔄 카테고리=Productivity 결정, ZIP 명령에 content-main.js 반영 완료 / version 1.0.0 올리기는 출시 직전 선택 |
-| 6 | ZIP 패키지 생성 및 최종 검증 | ⬜ 명령 수정 완료, 패키지 생성 대기 |
-| 7 | Developer Dashboard 제출 준비 완료 | ⬜ 사용자 작업 ($5 계정 + 제출) |
+| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | ✅ 카테고리=Productivity, 출시 버전=0.6.1 확정 |
+| 6 | ZIP 패키지 생성 및 최종 검증 | ✅ `right-click-on-web-v0.6.1.zip` 생성·검증 완료 |
+| 7 | Developer Dashboard 제출 준비 완료 | ⬜ 계정 인증 후 업로드·제출 |
 
 ---
 
@@ -122,8 +122,8 @@ assets/screenshots/test-page.png     # 1280x800 또는 640x400
 ## 작업 5: 카테고리/설정값 결정 및 manifest 정리
 
 ### manifest.json 최종 점검
-- `version`: 현재 `0.1.0` → 제출 전 `1.0.0`으로 변경 권장
-- `description`: 현재英文 → 스토어 제출용 짧은 설명로 교체
+- `version`: `0.6.1`
+- `description`: 영문 manifest 설명과 한국어 스토어 설명을 각각 사용
 - `action.default_icon`: 방금 만든 마우스 아이콘 연결됨 ✅
 
 ### Developer Dashboard에서 입력할 내용
@@ -141,20 +141,20 @@ assets/screenshots/test-page.png     # 1280x800 또는 640x400
 ### 패키지 명령
 ```powershell
 # repo 루트에서 실행 (content-main.js 포함 필수 — v0.2.0 듀얼 스크립트)
-Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.1.zip" -Force
 ```
 
 ### 최종 검증 체크리스트
-- [ ] ZIP 루트에 `manifest.json` 위치 확인
-- [ ] `icons/icon128.png` 포함
-- [ ] `.git`, `.serena`, `docs`, `tests`, `popup-preview.html`, `README.md` 제외됨
-- [ ] manifest `version` 올림 (예: `1.0.0`)
-- [ ] `permissions`: `storage`만
-- [ ] `host_permissions`: `<all_urls>`
+- [x] ZIP 루트에 `manifest.json` 위치 확인
+- [x] `icons/icon128.png`, `icons/icon512.png` 포함
+- [x] `.git`, `.serena`, `.omo`, `.codegraph`, `.playwright-mcp`, `history`, `docs`, `tests`, `assets`, `popup-preview.html`, `README.md`, `AGENTS.md` 제외됨
+- [x] manifest `version`: `0.6.1`
+- [x] `permissions`: `storage`, `activeTab`, `contextMenus`, `sidePanel`
+- [x] `host_permissions`: `<all_urls>`
 
 ### 제출용 파일
 ```
-right-click-on-web.zip   # 스토어에 업로드할 패키지
+right-click-on-web-v0.6.1.zip   # 스토어에 업로드할 패키지
 ```
 
 ---
@@ -163,10 +163,10 @@ right-click-on-web.zip   # 스토어에 업로드할 패키지
 
 ### 사전 확인
 - [ ] Chrome Web Store Developer 계정 등록 ($5 결제 완료)
-- [ ] 스크린샷 1장 이상 준비됨
-- [ ] 개인정보처리방침 URL 확보됨
-- [ ] 스토어 설명 작성됨
-- [ ] ZIP 패키지 생성됨
+- [x] 스크린샷 1장 이상 준비됨 (`assets/screenshots/test-page.png`)
+- [x] 개인정보처리방침 URL 확보됨
+- [x] 스토어 설명 작성됨
+- [x] ZIP 패키지 생성됨 (`right-click-on-web-v0.6.1.zip`)
 
 ### 제출 단계
 1. [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 접속 → 새 항목
@@ -185,17 +185,17 @@ right-click-on-web.zip   # 스토어에 업로드할 패키지
 ## 체크리스트 요약
 
 ### 지금 바로 시작 가능 (사용자 작업)
-- [ ] GitHub Pages 활성화 → 개인정보처리방침 URL 확보
-- [ ] 스크린샷 캡처 (popup + 테스트 페이지)
+- [x] GitHub Pages 활성화 → 개인정보처리방침 URL 확보
+- [x] 제출 규격 스크린샷 확보 (`assets/screenshots/test-page.png`)
 
 ### 내가 진행할 수 있음 (자동화 가능)
 - [x] 스토어 설명 HTML 작성 → `docs/store-listing.md`에 저장
-- [ ] manifest version `1.0.0`으로 올리기 (출시 직전 결정)
-- [ ] ZIP 패키지 생성 (`content-main.js` 포함 명령 사용)
-- [ ] 체크리스트 문서 최종 동기화
+- [x] manifest version `0.6.1` 확정
+- [x] ZIP 패키지 생성 (`content-main.js` 포함)
+- [x] 체크리스트 문서 최종 동기화
 
 ### 순서
 ```
 2 (스크린샷) + 3 (개인정보처리방침 호스팅)  →  4 (설명 ✅)  →  5 (manifest)  →  6 (ZIP)  →  7 (제출)
 ```
-작업 2, 3(호스팅), 7은 사용자가 직접 해야 하고, 작업 5(version), 6은 사용자가 스크린샷/URL을 제공하면 바로 진행합니다.
+작업 2~6은 완료됐으며, 남은 작업 7은 Chrome Web Store 계정 인증 후 업로드·제출입니다.

@@ -59,36 +59,67 @@
   ]);
 
   const blockedEventNameSet = new Set(BLOCKED_EVENT_NAMES);
-  const sentinelListener = function noopSentinel() {};
+  const blockedListenerMaps = new WeakMap();
 
   // ---- 1. Patch EventTarget.prototype.addEventListener ---------------
   //
-  // Native addEventListener accepts primitive strings and String wrapper
-  // objects, and throws TypeError for anything else. We mirror that
-  // shape and replace registrations for the blocking-only subset with
-  // a sentinel no-op so the page's preventDefault never runs.
   const originalAddEventListener = EventTarget.prototype.addEventListener;
+  const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
+
+  function normalizeEventType(type) {
+    if (typeof type === 'symbol') {
+      return null;
+    }
+    try {
+      return String(type);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function replacementFor(target, eventName, listener, create) {
+    if ((typeof listener !== 'function' && typeof listener !== 'object') || listener === null) {
+      return null;
+    }
+
+    let targetMap = blockedListenerMaps.get(target);
+    if (!targetMap) {
+      if (!create) return null;
+      targetMap = new Map();
+      blockedListenerMaps.set(target, targetMap);
+    }
+
+    let listenerMap = targetMap.get(eventName);
+    if (!listenerMap) {
+      if (!create) return null;
+      listenerMap = new WeakMap();
+      targetMap.set(eventName, listenerMap);
+    }
+
+    let replacement = listenerMap.get(listener);
+    if (!replacement && create) {
+      replacement = function noopSentinel() {};
+      listenerMap.set(listener, replacement);
+    }
+    return replacement || null;
+  }
 
   function patchedAddEventListener(type, listener, options) {
     if (this instanceof EventTarget) {
-      let normalizedType = null;
-      if (typeof type === 'string') {
-        normalizedType = type;
-      } else if (
-        typeof type === 'object' &&
-        type !== null &&
-        Object.prototype.toString.call(type) === '[object String]'
-      ) {
-        // String wrapper objects (`new String('contextmenu')`) are
-        // valid DOMString values. Custom objects with a toString()
-        // are NOT -- let the native method throw the spec-defined
-        // TypeError for malformed types.
-        normalizedType = String(type);
-      }
+      const normalizedType = normalizeEventType(type);
       if (normalizedType !== null && blockedEventNameSet.has(normalizedType)) {
+        const replacement = replacementFor(
+          this,
+          normalizedType,
+          listener,
+          true
+        );
+        if (!replacement) {
+          return Reflect.apply(originalAddEventListener, this, [type, listener, options]);
+        }
         return Reflect.apply(originalAddEventListener, this, [
-          type,
-          sentinelListener,
+          normalizedType,
+          replacement,
           options
         ]);
       }
@@ -101,6 +132,34 @@
   }
 
   EventTarget.prototype.addEventListener = patchedAddEventListener;
+
+  function patchedRemoveEventListener(type, listener, options) {
+    if (this instanceof EventTarget) {
+      const normalizedType = normalizeEventType(type);
+      if (normalizedType !== null && blockedEventNameSet.has(normalizedType)) {
+        const replacement = replacementFor(
+          this,
+          normalizedType,
+          listener,
+          false
+        );
+        if (replacement) {
+          return Reflect.apply(originalRemoveEventListener, this, [
+            normalizedType,
+            replacement,
+            options
+          ]);
+        }
+      }
+    }
+    return Reflect.apply(originalRemoveEventListener, this, [
+      type,
+      listener,
+      options
+    ]);
+  }
+
+  EventTarget.prototype.removeEventListener = patchedRemoveEventListener;
 
   // ---- 2. Patch Element.prototype.attachShadow ------------------------
   //

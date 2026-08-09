@@ -58,8 +58,8 @@ let isActive = false;
 let currentMode = SHARED.DEFAULT_MODE;
 let eventController = null;
 let observer = null;
-let shadowObservers = [];
-let observedShadowRoots = new WeakSet();
+let shadowObserverMap = new Map();
+let knownShadowRoots = new Set();
 let rescanTimer = null;
 let stats = createStats();
 
@@ -109,7 +109,7 @@ function isEditableElement(target) {
     return false;
   }
 
-  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]'));
+  return target.isContentEditable || Boolean(target.closest('input, textarea, select'));
 }
 
 function handleInterceptedEvent(eventName) {
@@ -122,8 +122,15 @@ function handleInterceptedEvent(eventName) {
   };
 }
 
-function injectSelectionStyle() {
-  if (document.getElementById(RIGHT_CLICK_ON_WEB.styleId)) {
+function selectionStyleFor(root) {
+  if (root === document) {
+    return document.getElementById(RIGHT_CLICK_ON_WEB.styleId);
+  }
+  return root.querySelector(`#${RIGHT_CLICK_ON_WEB.styleId}`);
+}
+
+function injectSelectionStyle(root = document) {
+  if (selectionStyleFor(root)) {
     return;
   }
 
@@ -149,12 +156,26 @@ function injectSelectionStyle() {
     }
   `;
 
-  const parent = document.head || document.documentElement;
+  const parent = root === document
+    ? (document.head || document.documentElement)
+    : root;
   parent.appendChild(style);
 }
 
-function removeSelectionStyle() {
-  document.getElementById(RIGHT_CLICK_ON_WEB.styleId)?.remove();
+function injectSelectionStyles() {
+  injectSelectionStyle(document);
+  sweepDetachedShadowRoots();
+  for (const shadow of knownShadowRoots) {
+    injectSelectionStyle(shadow);
+  }
+}
+
+function removeSelectionStyles() {
+  selectionStyleFor(document)?.remove();
+  for (const shadow of knownShadowRoots) {
+    selectionStyleFor(shadow)?.remove();
+  }
+  sweepDetachedShadowRoots();
 }
 
 function neutralizeBlockOverlay(element) {
@@ -261,6 +282,9 @@ function discoverShadowHosts(root) {
     null
   );
   const hosts = [];
+  if (root instanceof Element && root.shadowRoot) {
+    hosts.push(root);
+  }
   let current = walker.nextNode();
   while (current) {
     if (current.shadowRoot) {
@@ -280,6 +304,8 @@ function removeBlockingAttributes(root = document) {
     return;
   }
 
+  sweepDetachedShadowRoots();
+
   const candidates = collectBlockingAttributeCandidates(root);
 
   for (const element of candidates) {
@@ -297,23 +323,34 @@ function removeBlockingAttributes(root = document) {
 
   for (const host of discoverShadowHosts(root)) {
     const shadow = host.shadowRoot;
-    if (observedShadowRoots.has(shadow)) {
+    knownShadowRoots.add(shadow);
+    if (currentMode === SHARED.MODE_ULTIMATE) {
+      injectSelectionStyle(shadow);
+    }
+    if (shadowObserverMap.has(shadow)) {
       continue;
     }
-    observedShadowRoots.add(shadow);
     stats.shadowRootsScanned += 1;
     const observerInstance = attachMutationObserver(shadow);
     if (observerInstance) {
-      shadowObservers.push(observerInstance);
+      shadowObserverMap.set(shadow, observerInstance);
     }
     removeBlockingAttributes(shadow);
   }
 }
 
-function pruneShadowObserver(observerToPrune) {
-  const index = shadowObservers.indexOf(observerToPrune);
-  if (index !== -1) {
-    shadowObservers.splice(index, 1);
+function sweepDetachedShadowRoots() {
+  for (const shadow of knownShadowRoots) {
+    if (shadow.host.isConnected) {
+      continue;
+    }
+    selectionStyleFor(shadow)?.remove();
+    const shadowObserver = shadowObserverMap.get(shadow);
+    if (shadowObserver) {
+      shadowObserver.disconnect();
+      shadowObserverMap.delete(shadow);
+    }
+    knownShadowRoots.delete(shadow);
   }
 }
 
@@ -325,10 +362,20 @@ function attachMutationObserver(root) {
   const target = root === document ? (document.documentElement || document) : root;
 
   const observerInstance = new MutationObserver((mutations) => {
-    if (root !== document && target instanceof Element && !target.isConnected) {
+    if (
+      root !== document &&
+      ((target instanceof Element && !target.isConnected) ||
+        (typeof ShadowRoot !== 'undefined' && target instanceof ShadowRoot && !target.host.isConnected))
+    ) {
       observerInstance.disconnect();
-      pruneShadowObserver(observerInstance);
+      selectionStyleFor(root)?.remove();
+      shadowObserverMap.delete(root);
+      knownShadowRoots.delete(root);
       return;
+    }
+
+    if (root === document) {
+      sweepDetachedShadowRoots();
     }
 
     for (const mutation of mutations) {
@@ -419,7 +466,7 @@ function enableUnlocker() {
   // no user-select style override, so the page's own user-select
   // rules are preserved.
   if (currentMode === SHARED.MODE_ULTIMATE) {
-    injectSelectionStyle();
+    injectSelectionStyles();
   }
   removeBlockingAttributes();
   addEventInterceptors();
@@ -436,15 +483,15 @@ function disableUnlocker() {
   observer?.disconnect();
   observer = null;
 
-  for (const observerInstance of shadowObservers) {
+  for (const observerInstance of shadowObserverMap.values()) {
     observerInstance.disconnect();
   }
-  shadowObservers = [];
-
-  observedShadowRoots = new WeakSet();
+  shadowObserverMap.clear();
 
   stopPeriodicRescan();
-  removeSelectionStyle();
+  removeSelectionStyles();
+
+  knownShadowRoots = new Set();
 
   isActive = false;
 }
@@ -464,9 +511,9 @@ function setEnabled(nextEnabled, nextMode) {
   if (enabled) {
     if (isActive && previousMode !== currentMode) {
       if (currentMode === SHARED.MODE_ULTIMATE) {
-        injectSelectionStyle();
+        injectSelectionStyles();
       } else {
-        removeSelectionStyle();
+        removeSelectionStyles();
       }
     } else {
       enableUnlocker();
@@ -486,13 +533,61 @@ function setEnabled(nextEnabled, nextMode) {
 // copy and is documented in AGENTS.md NOTES.
 //
 // Edge cases handled:
-//   - Non-http(s) URL → hostname is ''; falls through to global.
+//   - Related opaque frame → inherit a trustworthy parent/referrer host;
+//     unresolved opaque descendants fail closed.
 //   - Session storage unavailable (older Chromium, dev builds) → skip.
 //   - Domain settings entry for a public-suffix key → resolveDomainKey
-//     skips and walks further (handled in shared.js).
+//     stops broader parent matching (handled in shared.js).
+
+function resolveFrameHostname() {
+  const directHostname = SHARED.getHostname(window.location.href);
+  if (directHostname) {
+    return directHostname;
+  }
+
+  try {
+    if (window.location.protocol === 'blob:') {
+      const blobOrigin = new URL(window.location.href).origin;
+      const blobHostname = SHARED.getHostname(blobOrigin);
+      if (blobHostname) {
+        return blobHostname;
+      }
+    }
+  } catch (_) {}
+
+  try {
+    for (const origin of window.location.ancestorOrigins || []) {
+      const ancestorHostname = SHARED.getHostname(origin);
+      if (ancestorHostname) {
+        return ancestorHostname;
+      }
+    }
+  } catch (_) {}
+
+  const referrerHostname = SHARED.getHostname(document.referrer);
+  if (referrerHostname) {
+    return referrerHostname;
+  }
+
+  try {
+    return SHARED.getHostname(window.parent.location.href);
+  } catch (_) {
+    return '';
+  }
+}
 
 async function resolveEnabled() {
-  const hostname = SHARED.getHostname(window.location.href);
+  const directHostname = SHARED.getHostname(window.location.href);
+  const hostname = directHostname || resolveFrameHostname();
+  if (!directHostname && window !== window.top && !hostname) {
+    return {
+      enabled: false,
+      source: 'opaque-origin-unresolved',
+      hostname: '',
+      matchedKey: null,
+      mode: SHARED.DEFAULT_MODE
+    };
+  }
 
   // 1) Session layer — temporary per-hostname override. Wins over
   //    everything because the user explicitly asked for "this session
@@ -566,8 +661,10 @@ async function resolveEnabled() {
 // popup within a tick), we coalesce into a single in-flight resolve.
 // Returns the existing promise so callers can await it if needed.
 let resolvePromise = null;
+let resolveQueued = false;
 function resolveAndApply() {
   if (resolvePromise) {
+    resolveQueued = true;
     return resolvePromise;
   }
   resolvePromise = (async () => {
@@ -594,6 +691,10 @@ function resolveAndApply() {
       // but a bug in stats surface code must not break the unlocker.
     } finally {
       resolvePromise = null;
+      if (resolveQueued) {
+        resolveQueued = false;
+        resolveAndApply();
+      }
     }
   })();
   return resolvePromise;

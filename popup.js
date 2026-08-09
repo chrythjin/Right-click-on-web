@@ -3,7 +3,7 @@
 // Responsibilities:
 //   - Render global ON/OFF toggle (existing v0.2.0 behaviour)
 //   - Render per-domain toggle for the active tab's hostname
-//   - Render session-mode toggle (per-tab temporary activation)
+//   - Render session-mode toggle (browser-session temporary activation)
 //   - Sync the rendered state with chrome.storage changes that arrive
 //     while the popup is open (e.g. user toggled global from keyboard
 //     shortcut in a future version, or another popup instance updated

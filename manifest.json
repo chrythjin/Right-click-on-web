@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Restores common right-click, text selection, copy, and drag interactions on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
@@ -22,24 +22,29 @@
     "default_path": "options.html"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["shared.js", "background.js"]
   },
   "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["shared.js", "content.js"],
-      "run_at": "document_start",
-      "all_frames": true
-    },
     {
       "matches": ["<all_urls>"],
       "js": ["content-main.js"],
       "run_at": "document_start",
       "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
       "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["shared.js", "content.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
     }
   ],
-  "minimum_chrome_version": "114",
+  "minimum_chrome_version": "121",
   "permissions": ["storage", "activeTab", "contextMenus", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "browser_specific_settings": {

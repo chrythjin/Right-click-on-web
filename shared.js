@@ -321,16 +321,16 @@
     });
   }
 
-  // Detect whether chrome.storage.session is available at runtime.
-  // Chrome 102+ supports it, but defensive checks keep the extension
-  // loadable on older Chromium builds (the minimum_chrome_version in
-  // manifest.json is 111, so this is purely belt-and-braces).
+  // Session mode also requires content-script access. Chromium exposes
+  // setAccessLevel() for that contract; API shapes without it cannot keep
+  // popup and content-script resolution in agreement.
   function isSessionStorageAvailable() {
     try {
       return Boolean(
         chrome.storage &&
         chrome.storage.session &&
-        typeof chrome.storage.session.get === 'function'
+        typeof chrome.storage.session.get === 'function' &&
+        typeof chrome.storage.session.setAccessLevel === 'function'
       );
     } catch (_) {
       return false;

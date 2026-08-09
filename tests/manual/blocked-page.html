@@ -172,7 +172,7 @@
 
     <section>
       <h2>8. Closed Shadow DOM 강제 변환</h2>
-      <p class="hint">아래 버튼을 누르면 사용자 정의 요소가 <code>attachShadow({mode:'closed'})</code>를 호출하고, Shadow Root 내부에서 인라인 <code>on*</code> 속성과 <code>addEventListener</code>로 우클릭·복사를 차단합니다. 확장 ON 상태에서는 MAIN world 패치가 <code>closed</code>를 <code>open</code>으로 변환하고 <code>content.js</code>의 인터셉터가 Shadow Root 내부까지 정리합니다.</p>
+      <p class="hint">아래 버튼을 누르면 사용자 정의 요소가 <code>attachShadow({mode:'closed'})</code>를 호출하고, Shadow Root 내부에서 인라인 <code>on*</code> 속성, <code>addEventListener</code>, <code>user-select: none</code>으로 우클릭·복사·선택을 차단합니다. 확장 ON 상태에서는 MAIN world 패치가 <code>closed</code>를 <code>open</code>으로 변환하고 <code>content.js</code>가 내부 차단을 정리합니다. Ultimate에서는 Shadow Root 내부 텍스트도 선택 가능해야 합니다.</p>
       <button id="createClosedHost" type="button">Closed Shadow Host 생성</button>
       <div id="shadowHostContainer"></div>
     </section>
@@ -360,8 +360,10 @@
         host.className = 'closedShadowHost';
         document.getElementById('shadowHostContainer').replaceChildren(host);
         const reachable = host.shadowRoot !== null;
+        const shadowParagraph = reachable ? host.shadowRoot.querySelector('p') : null;
+        const selection = shadowParagraph ? getComputedStyle(shadowParagraph).userSelect : 'unknown';
         closedHostStatus.textContent = reachable
-          ? '상태: shadowRoot 외부 접근 가능 (closed→open 변환 동작)'
+          ? `상태: closed→open 변환 동작 / Shadow 텍스트 user-select=${selection}`
           : '상태: shadowRoot null (MAIN 패치가 타이밍을 놓친 상태)';
       });
 

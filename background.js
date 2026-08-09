@@ -1,4 +1,4 @@
-// Right-click on Web — service worker
+// Right-click on Web — background worker/event page
 //
 // Responsibilities:
 //   - Initialize default storage shape on install/update
@@ -12,12 +12,18 @@
 //     panel on a sidePanel-aware browser, and surface a Firefox notice
 //     when chrome.storage.session is unavailable.
 //
+// Chrome loads this file as an MV3 service worker. Firefox loads the same
+// file as an MV3 non-persistent background script because Firefox does not
+// yet support extension background service workers.
+//
 // Shared helpers come from shared.js via importScripts. The popup and
 // content script each load shared.js through their own <script> tag,
 // but the data they read/write flows through the same chrome.storage
 // surface, so the three contexts agree automatically.
 
-importScripts('shared.js');
+if (!globalThis.RIGHT_CLICK_ON_WEB_SHARED && typeof importScripts === 'function') {
+  importScripts('shared.js');
+}
 
 const SHARED = globalThis.RIGHT_CLICK_ON_WEB_SHARED;
 const DEFAULT_SETTINGS = SHARED.STORAGE_DEFAULTS;
@@ -27,6 +33,19 @@ const CONTEXT_MENU_IDS = Object.freeze({
   OPEN_PANEL: 'rcow-open-panel',
   OPEN_OPTIONS: 'rcow-open-options'
 });
+
+async function exposeSessionStorageToContentScripts() {
+  if (typeof chrome.storage.session?.setAccessLevel !== 'function') {
+    return;
+  }
+  try {
+    await chrome.storage.session.setAccessLevel({
+      accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS'
+    });
+  } catch (_) {}
+}
+
+void exposeSessionStorageToContentScripts();
 
 function initializeStorage() {
   chrome.storage.local.get(DEFAULT_SETTINGS, (existing) => {
@@ -124,6 +143,7 @@ async function migrateDomainSettings(area) {
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
+  exposeSessionStorageToContentScripts();
   initializeStorage();
   // reason='update' covers v0.3.0→v0.4.0 upgrade; reason='install'
   // covers brand-new users (who have no local data to migrate).
@@ -147,6 +167,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 // not need to re-initialize — but we do verify the shape in case the
 // data was cleared externally (e.g. by user via chrome://extensions).
 chrome.runtime.onStartup.addListener(() => {
+  exposeSessionStorageToContentScripts();
   initializeStorage();
   registerContextMenus();
   // Don't migrate on startup: only on actual install/update events

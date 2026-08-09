@@ -1,13 +1,13 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-09 (v0.6.0 modernization)
-**Version:** 0.6.0 (manifest.json)
+**Generated:** 2026-08-09 (v0.6.1 bypass-engine compatibility)
+**Version:** 0.6.1 (manifest.json)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
 ## OVERVIEW
 
-Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernizes the extension for current Chrome MV3 trends**: it adds a context menu on the browser action, opens the options page inside Chrome's side panel when the host supports it, follows `prefers-color-scheme`, and surfaces a friendly notice when `chrome.storage.session` is missing (e.g. current Firefox MV3). No npm, no bundler — loaded directly as unpacked extension.
+Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. No npm, no bundler — loaded directly as unpacked extension.
 
 ## STRUCTURE
 
@@ -49,8 +49,8 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Dual-script orchestration (load order, world split) | `manifest.json` → `content_scripts[]` | Both run at `document_start`, `all_frames: true`; content_scripts[0].js is now `["shared.js", "content.js"]` |
-| Shared helpers (domain matching, hostname parsing, storage Promise wrappers) | `shared.js` | Loaded via content_scripts[0] (before content.js), popup.html `<script>` tag, and background.js `importScripts`. Single global `RIGHT_CLICK_ON_WEB_SHARED`. |
+| Dual-script orchestration (load order, world split) | `manifest.json` → `content_scripts[]` | Both run at `document_start`, `all_frames: true`; MAIN `content-main.js` is entry 0 and ISOLATED `["shared.js", "content.js"]` is entry 1. |
+| Shared helpers (domain matching, hostname parsing, storage Promise wrappers) | `shared.js` | Loaded via the ISOLATED content-script entry (before content.js), popup.html `<script>` tag, and background.js `importScripts`/Firefox `background.scripts`. Single global `RIGHT_CLICK_ON_WEB_SHARED`. |
 | DOM cleanup, attribute removal, capture-phase interceptors, MutationObserver, periodic rescan | `content.js` | ISOLATED world; single global `RIGHT_CLICK_ON_WEB` config object |
 | MAIN-world prototype patches (`addEventListener`, `attachShadow`) | `content-main.js` | Runs FIRST at document_start; sentinel listener preserves AbortSignal spec contract |
 | `BLOCKED_EVENT_NAMES` ↔ `RIGHT_CLICK_ON_WEB.blockedEvents` sync | cross-reference between `content-main.js:52` and `content.js:14` | Subset split: MAIN blocks only blocking-only events; ISOLATED handles the rest with editable-target exemption |
@@ -86,7 +86,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | `getHostname(href)` | fn | `shared.js` | URL parsing; returns '' for non-http(s) or invalid; used by both popup and content script to gate domain controls |
 | `isDomainEnabled(globalEnabled, settings, hostname)` | fn | `shared.js` | Boolean decision: global OFF wins everywhere; otherwise domain entry wins over global |
 | `storageGet/Set/Remove(area, ...)` | fn | `shared.js` | Promise wrappers around chrome.storage callback API; surfaces chrome.runtime.lastError as rejection |
-| `isSessionStorageAvailable()` | fn | `shared.js` | Defensive runtime check for chrome.storage.session (Chrome 102+); belt-and-braces — manifest min is 111 |
+| `isSessionStorageAvailable()` | fn | `shared.js` | Defensive runtime check for chrome.storage.session (Chrome 102+); content-script access is enabled by the background worker on install/startup |
 | `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (8), blockedEvents (13), rescanIntervalMs (2000), styleId, markerAttribute |
 | `createStats()` | fn | `content.js` | Initializes counters: attributeRemovals, eventInterceptions, overlaysNeutralized, shadowRootsScanned, periodicRescans + v0.3.0 resolveSource, matchedDomain |
 | `enableUnlocker()` / `disableUnlocker()` | fn | `content.js` | Idempotent mount/unmount of CSS + listeners + observer + rescan timer |
