@@ -36,7 +36,7 @@ graph TD
   2. GitHub 저장소 설정(Settings) -> Pages 메뉴에서 GitHub Pages를 활성화합니다.
   3. 활성화된 URL(예: `https://chrythjin.github.io/Right-click-on-web/privacy-policy.html`)을 확보합니다.
 * **최소 개인정보처리방침 내용 구성**:
-  > 본 프로그램은 사용자의 브라우징 데이터, 개인정보를 수집, 저장, 또는 원격 서버로 전송하지 않으며, 모든 설정값은 로컬 브라우저 저장소(`chrome.storage.local`)에만 저장됩니다.
+   > 본 프로그램은 사용자의 브라우징 데이터나 개인정보를 수집하거나 원격 서버로 전송하지 않습니다. 사용자가 직접 설정한 전역·도메인별 옵션만 브라우저의 `chrome.storage.sync`에 동기화되며, 동기화가 불가능한 경우 `chrome.storage.local`에 현재 기기용으로 저장됩니다.
 
 ---
 
@@ -49,10 +49,10 @@ graph TD
 프로젝트 루트 폴더(`c:\NEW PRG\Right-click-on-web`)에서 PowerShell을 열고 다음 명령어를 실행합니다.
 
 ```powershell
-Compress-Archive -Path manifest.json, background.js, content.js, content-main.js, popup.html, popup.css, popup.js, icons -DestinationPath "right-click-on-web.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web.zip" -Force
 ```
 
-* **포함 대상**: `manifest.json`, `background.js`, `content.js`, `content-main.js`, `popup.html`, `popup.css`, `popup.js`, `icons/`
+* **포함 대상**: `manifest.json`, `shared.js`, `background.js`, `content.js`, `content-main.js`, `popup.html`, `popup.css`, `popup.js`, `options.html`, `options.css`, `options.js`, `icons/`
   - ⚠️ **`content-main.js` (MAIN world 패처) 반드시 포함** — v0.2.0 듀얼 스크립트 아키텍처의 핵심. 누락 시 페이지 차단 스크립트 무력화가 동작하지 않음.
 * **제외 대상**: `.git/`, `.serena/`, `.omo/`, `history/`, `docs/`, `tests/`, `README.md`, `popup-preview.html`
 
@@ -83,14 +83,15 @@ ZIP 업로드가 완료되면 대시보드 내 좌측 메뉴를 순서대로 채
   - 잠겨있는 마우스 오른쪽 버튼 메뉴(콘텍스트 메뉴) 복원
   - 마우스 드래그를 통한 텍스트 선택 허용
   - 복사(Ctrl+C) 및 잘라내기 단작동 정상화
-  - 직관적인 팝업 UI를 통한 원클릭 전역 ON/OFF 제어
+   - 직관적인 팝업 UI를 통한 원클릭 전역 ON/OFF 제어
+   - 전체 설정 화면에서 저장된 사이트별 ON/OFF·Lite/Ultimate 모드 관리
   - 리소스 낭비가 없는 가볍고 빠른 논-블로킹 설계
 
   [제한 사항]
   - 이 프로그램은 기술적 표준에 따라 동작하므로, 웹 표준 외부의 시스템(DRM 보호 미디어, 금융 보안 화면, 이미지/캔버스 안에 그려진 글자, 캡슐화된 Shadow DOM) 내에서는 작동이 제한될 수 있습니다.
 
   [개인정보 보호 약속]
-  - 본 프로그램은 사용자 정보를 절대 수집, 가공, 원격 서버로 전송하지 않습니다. 안심하고 사용하세요.
+   - 본 프로그램은 사용자 정보를 수집·가공·원격 서버로 전송하지 않습니다. 사용자가 직접 지정한 설정만 브라우저 동기화에 저장됩니다.
   ```
 * **카테고리**: `생산성` (Productivity) 또는 `도구` (Developer Tools)
 * **스크린샷**: 1단계에서 준비한 PNG 파일 업로드

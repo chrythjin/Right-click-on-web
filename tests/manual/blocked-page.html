@@ -32,6 +32,10 @@
         user-select: none;
       }
 
+      .liteOnly {
+        user-select: none;
+      }
+
       section .dropZone {
         position: relative;
         min-height: 80px;
@@ -188,14 +192,14 @@
 
     <section>
       <h2>10. 세션 임시 활성화 (v0.3.0)</h2>
-      <p class="hint">전역 OFF + 도메인 OFF 상태에서도, 확장 팝업의 "이번 세션만 임시 활성화" 버튼을 누르면 이 페이지에서만 우클릭 차단이 풀립니다. 탭을 닫거나 새로고침하면 자동으로 비활성화됩니다 (chrome.storage.session 특성).</p>
+      <p class="hint">전역 OFF + 도메인 OFF 상태에서도, 확장 팝업의 "이번 세션만 임시 활성화" 버튼을 누르면 이 페이지에서만 우클릭 차단이 풀립니다. 새로고침이나 탭을 닫았다 다시 열어도 현재 브라우저 세션 동안 유지되며, 브라우저를 완전히 종료하면 자동으로 해제됩니다 (chrome.storage.session 특성).</p>
       <ol>
         <li>전역 토글 OFF</li>
         <li>시나리오 9에서 도메인 토글 OFF</li>
         <li>이 영역 우클릭 → 차단 (어떤 레이어도 ON이 아님)</li>
         <li>팝업에서 "이번 세션만 임시 활성화" 클릭</li>
         <li>이 영역 우클릭 → 풀림 (세션 레이어 우선)</li>
-        <li>탭 새로고침 → 다시 차단 (세션 스토리지는 유지되지만 content.js 재실행 시 재해석; 실제 동작은 session 키 보존 여부에 따라)</li>
+        <li>새로고침 → 세션 설정은 유지되어 계속 풀림 (브라우저 세션 종료 후 자동 해제)</li>
       </ol>
       <div class="dropZone" id="section10Target">
         이 영역에서 우클릭/복사를 시도하여 세션 모드 효과를 확인하세요.

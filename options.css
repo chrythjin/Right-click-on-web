@@ -1,0 +1,166 @@
+body {
+  width: auto;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+.options-shell {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 36px 24px 56px;
+}
+
+.options-hero {
+  padding-bottom: 22px;
+}
+
+.options-hero h1,
+.options-section h2 {
+  margin: 0;
+}
+
+.options-global {
+  margin-top: 0;
+}
+
+.options-section {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(21, 21, 21, 0.78);
+}
+
+.section-heading,
+.site-row-header,
+.site-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.site-count {
+  margin: 0;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.options-help,
+.site-state {
+  margin: 7px 0 0;
+  color: var(--muted-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.site-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.site-row {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--gold);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.site-row h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.site-row-actions {
+  margin-top: 12px;
+}
+
+.site-row-actions .mode-toggle {
+  flex: 1;
+  margin-top: 0;
+}
+
+.delete-button {
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid rgba(225, 6, 0, 0.55);
+  border-radius: 10px;
+  background: transparent;
+  color: #ff8d88;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.delete-button:hover {
+  background: rgba(225, 6, 0, 0.16);
+}
+
+.delete-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed rgba(200, 164, 93, 0.35);
+  border-radius: 12px;
+  color: var(--muted-soft);
+  font-size: 13px;
+  text-align: center;
+}
+
+.options-info {
+  margin-top: 18px;
+}
+
+@media (max-width: 460px) {
+  .options-shell {
+    padding: 22px 14px 36px;
+  }
+
+  .site-row-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    color: #1a1a1a;
+    background:
+      linear-gradient(135deg, rgba(225, 6, 0, 0.10), transparent 34%),
+      radial-gradient(circle at 85% 12%, rgba(200, 164, 93, 0.18), transparent 28%),
+      #f6f7fa;
+  }
+
+  .options-section,
+  .site-row {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  }
+
+  .site-row h3,
+  .site-count {
+    color: #1a1a1a;
+  }
+
+  .options-help,
+  .site-state,
+  .empty-state {
+    color: #4a4a4a;
+  }
+
+  .delete-button {
+    color: #b3261e;
+    border-color: rgba(179, 38, 30, 0.55);
+  }
+}

@@ -22,7 +22,7 @@
   </head>
   <body>
     <h1>개인정보처리방침</h1>
-    <p class="updated">최종 수정: 2026-08-08 (v0.4.0: Chrome Sync 항목 추가)</p>
+    <p class="updated">최종 수정: 2026-08-09 (v0.6.0: 사이드 패널·컨텍스트 메뉴·다크 모드 통합)</p>
 
     <p><strong>Right-click on Web</strong> 확장 프로그램(이하 "본 확장")은 사용자의 개인정보를 수집·저장·가공·전송하지 않습니다. 본 정책은 사용자가 본 확장을 설치·사용하는 동안 어떤 데이터가 어디에 저장되고 어떻게 처리되는지를 명시합니다.</p>
 
@@ -39,8 +39,8 @@
     <p>본 확장이 저장하는 데이터는 사용자가 직접 구성한 <strong>설정 값뿐</strong>이며, 페이지 내용·텍스트 선택·복사 내용 등은 절대 저장하지 않습니다.</p>
     <ul>
       <li><strong>전역 ON/OFF 플래그</strong> — 단일 boolean (기본값 <code>true</code>)</li>
-      <li><strong>도메인별 설정 목록</strong> — 사용자가 팝업에서 등록한 hostname 문자열과 각 도메인의 ON/OFF boolean</li>
-      <li><strong>세션 임시 활성화</strong> — 해당 hostname에 한해 이번 세션 동안 ON으로 강제 (브라우저 종료 시 자동 소멸)</li>
+      <li><strong>도메인별 설정 목록</strong> — 사용자가 팝업, 설정 화면, 또는 컨텍스트 메뉴에서 등록한 hostname 문자열과 각 도메인의 ON/OFF·완화 모드(Lite/Ultimate)</li>
+      <li><strong>세션 임시 활성화</strong> — 해당 hostname에 한해 이번 세션 동안 ON으로 강제 (브라우저 종료 시 자동 소멸, Firefox MV3는 비활성)</li>
     </ul>
 
     <h2>3. 저장 위치</h2>
@@ -63,7 +63,7 @@
       <li><code>&lt;all_urls&gt;</code> (호스트 권한) — 모든 웹페이지에서 우클릭/선택/복사 차단 스크립트를 완화하기 위함. 페이지 내용을 수집하거나 저장하는 데 사용되지 않습니다.</li>
     </ul>
 
-    <h2>6. 동기화 비활성화</h6>
+    <h2>6. 동기화 비활성화</h2>
     <p>동기화를 비활성화하려면 <code>chrome://settings/syncSetup</code>에서 "확장 프로그램" 항목을 끄거나, Chrome Sync 자체를 비활성화할 수 있습니다. 동기화가 비활성화된 경우 설정은 <code>chrome.storage.local</code>에만 저장되며 다른 기기로 전파되지 않습니다.</p>
     <p>동기화 quota (Chrome 정책상 100KB / 기기당)가 초과된 경우 본 확장은 자동으로 <code>chrome.storage.local</code>에 데이터를 저장하며, 이는 사용자에게 팝업의 "동기화 사용량" 표시로 안내됩니다.</p>
 

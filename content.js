@@ -453,6 +453,7 @@ function disableUnlocker() {
 // unlocker knows whether to inject the CSS override. Pass
 // SHARED.DEFAULT_MODE when not using a domain-specific mode.
 function setEnabled(nextEnabled, nextMode) {
+  const previousMode = currentMode;
   enabled = nextEnabled;
   if (nextMode === SHARED.MODE_LITE || nextMode === SHARED.MODE_ULTIMATE) {
     currentMode = nextMode;
@@ -461,7 +462,15 @@ function setEnabled(nextEnabled, nextMode) {
   }
 
   if (enabled) {
-    enableUnlocker();
+    if (isActive && previousMode !== currentMode) {
+      if (currentMode === SHARED.MODE_ULTIMATE) {
+        injectSelectionStyle();
+      } else {
+        removeSelectionStyle();
+      }
+    } else {
+      enableUnlocker();
+    }
   } else {
     disableUnlocker();
   }
@@ -567,6 +576,7 @@ function resolveAndApply() {
       if (!result) {
         return;
       }
+      setEnabled(result.enabled, result.mode);
       // Surface the decision on the public stats object so the
       // manual test page and any future debugging UI can show
       // *why* the unlocker is on or off.
@@ -579,7 +589,6 @@ function resolveAndApply() {
       } catch (_) {
         // Stats object may not exist yet — safe to ignore.
       }
-      setEnabled(result.enabled, result.mode);
     } catch (_) {
       // Defensive — resolveEnabled already catches its own errors,
       // but a bug in stats surface code must not break the unlocker.

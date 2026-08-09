@@ -18,9 +18,9 @@
   'use strict';
 
   // Public suffix blocklist — minimal subset of common multi-part TLDs.
-  // Used as a safety net: even if a user accidentally registers "co.uk"
-  // in domainSettings, resolveDomainKey will skip it and continue
-  // searching for a more specific match.
+  // Used as a safety net: a matching public suffix stops parent-domain
+  // traversal, so an accidental "co.uk" or "uk" setting cannot apply
+  // across an entire public suffix.
   //
   // This is intentionally NOT the full Public Suffix List. Keeping it
   // compact avoids a multi-MB PSL payload in a no-build extension.
@@ -95,6 +95,7 @@
   }
 
   const SESSION_KEY_PREFIX = 'session:';
+  const LOCAL_FALLBACK_KEYS = '__rightClickOnWebSyncFallbackKeys';
 
   function sessionKeyFor(hostname) {
     if (!hostname) {
@@ -387,17 +388,46 @@
     });
   }
 
-  // Try writing to sync; on quota error fall back to local. Other
-  // errors propagate so callers can surface unexpected failures.
-  // Used by popup.js for every user-initiated write so the user's
-  // intent is never lost when sync quota runs out.
+  // Try writing to sync; on quota error fall back to local. A local
+  // fallback marker makes resolveSettings prefer that local key over an
+  // older sync value, so the user's latest action takes effect immediately.
+  // A later successful sync write removes the marker again.
   async function safeSyncSet(data, fallbackArea) {
+    const keys = Object.keys(data);
     try {
       await storageSet(chrome.storage.sync, data);
+      if (fallbackArea) {
+        const fallbackData = await storageGet(fallbackArea, [LOCAL_FALLBACK_KEYS]);
+        const fallbackKeys = fallbackData[LOCAL_FALLBACK_KEYS];
+        if (fallbackKeys && typeof fallbackKeys === 'object') {
+          const remaining = { ...fallbackKeys };
+          for (const key of keys) {
+            delete remaining[key];
+          }
+          try {
+            if (Object.keys(remaining).length === 0) {
+              await storageRemove(fallbackArea, LOCAL_FALLBACK_KEYS);
+            } else {
+              await storageSet(fallbackArea, { [LOCAL_FALLBACK_KEYS]: remaining });
+            }
+          } catch (_) {}
+        }
+      }
       return { area: 'sync' };
     } catch (err) {
       if (isQuotaExceeded(err) && fallbackArea) {
-        await storageSet(fallbackArea, data);
+        const fallbackData = await storageGet(fallbackArea, [LOCAL_FALLBACK_KEYS]);
+        const fallbackKeys = fallbackData[LOCAL_FALLBACK_KEYS];
+        const nextFallbackKeys = fallbackKeys && typeof fallbackKeys === 'object'
+          ? { ...fallbackKeys }
+          : {};
+        for (const key of keys) {
+          nextFallbackKeys[key] = true;
+        }
+        await storageSet(fallbackArea, {
+          ...data,
+          [LOCAL_FALLBACK_KEYS]: nextFallbackKeys
+        });
         return { area: 'local', fallback: true, reason: err.message };
       }
       throw err;
@@ -405,16 +435,28 @@
   }
 
   // Read sync + local in parallel and merge with sync winning on
-  // conflict. Returns {} on total failure so callers can treat it
-  // as "no settings found".
+  // conflict, except keys explicitly marked as a current-device quota
+  // fallback. Returns {} on total failure so callers can treat it as
+  // "no settings found".
   async function resolveSettings(keys) {
     const safe = (promise) => promise.then((v) => v).catch(() => ({}));
+    const requestedKeys = Object.keys(keys);
     const [syncData, localData] = await Promise.all([
-      safe(storageGet(chrome.storage.sync, keys)),
-      safe(storageGet(chrome.storage.local, keys))
+      safe(storageGet(chrome.storage.sync, requestedKeys)),
+      safe(storageGet(chrome.storage.local, [...requestedKeys, LOCAL_FALLBACK_KEYS]))
     ]);
+    const fallbackKeys = localData[LOCAL_FALLBACK_KEYS];
+    delete localData[LOCAL_FALLBACK_KEYS];
     // sync wins — most recent cross-device state.
-    return Object.assign({}, localData, syncData);
+    const resolved = Object.assign({}, keys, localData, syncData);
+    if (fallbackKeys && typeof fallbackKeys === 'object') {
+      for (const key of Object.keys(fallbackKeys)) {
+        if (Object.prototype.hasOwnProperty.call(localData, key)) {
+          resolved[key] = localData[key];
+        }
+      }
+    }
+    return resolved;
   }
 
   // Single export — content.js and popup.js both access via
@@ -425,6 +467,7 @@
     MAX_DOMAIN_MATCH_DEPTH,
     STORAGE_DEFAULTS,
     SESSION_KEY_PREFIX,
+    LOCAL_FALLBACK_KEYS,
     SYNC_QUOTA,
     MODE_LITE,
     MODE_ULTIMATE,

@@ -42,7 +42,10 @@ const elements = {
   modeUltimate: document.getElementById('modeUltimate'),
   modeHint: document.getElementById('modeHint'),
   sessionButton: document.getElementById('sessionButton'),
-  syncUsage: document.getElementById('syncUsage')
+  sessionNotice: document.getElementById('sessionNotice'),
+  syncUsage: document.getElementById('syncUsage'),
+  openOptionsButton: document.getElementById('openOptionsButton'),
+  openSidePanelButton: document.getElementById('openSidePanelButton')
 };
 // Fail fast if popup.html is out of sync with popup.js — a silent
 // blank popup is harder to debug than a script error at startup.
@@ -94,8 +97,9 @@ async function loadState() {
     ? (SHARED.resolveMode(state.hostname, state.domainSettings) || SHARED.DEFAULT_MODE)
     : SHARED.DEFAULT_MODE;
 
+  state.sessionAvailable = SHARED.isSessionStorageAvailable();
   state.sessionActive = false;
-  if (state.hostname && SHARED.isSessionStorageAvailable()) {
+  if (state.hostname && state.sessionAvailable) {
     const sessionKey = SHARED.sessionKeyFor(state.hostname);
     try {
       const sessionData = await SHARED.storageGet(chrome.storage.session, sessionKey);
@@ -204,12 +208,36 @@ function render() {
   }
 
   // ---- Session button ----
-  const sessionAvail = SHARED.isSessionStorageAvailable();
-  elements.sessionButton.disabled = !sessionAvail;
+  elements.sessionButton.disabled = !state.sessionAvailable;
   elements.sessionButton.classList.toggle('is-active', state.sessionActive);
   elements.sessionButton.textContent = state.sessionActive
     ? '세션 활성화 중 — 클릭하여 끄기'
     : '이번 세션만 임시 활성화';
+
+  // ---- Session availability notice (v0.6.0) ----
+  // Firefox MV3 does not yet implement chrome.storage.session. When
+  // the API is missing we show a friendly explanation rather than a
+  // silently disabled button so the user knows this is a platform
+  // gap, not a bug.
+  if (elements.sessionNotice) {
+    if (!state.sessionAvailable) {
+      elements.sessionNotice.textContent = '현재 브라우저는 chrome.storage.session을 지원하지 않아 세션 임시 활성화 기능을 사용할 수 없습니다. 영구 도메인 설정은 계속 사용할 수 있습니다.';
+      elements.sessionNotice.classList.remove('is-hidden');
+    } else {
+      elements.sessionNotice.textContent = '';
+      elements.sessionNotice.classList.add('is-hidden');
+    }
+  }
+
+  // ---- Side panel shortcut (v0.6.0) ----
+  if (elements.openSidePanelButton) {
+    const supportsSidePanel = typeof chrome !== 'undefined' && chrome.sidePanel && typeof chrome.sidePanel.open === 'function';
+    if (supportsSidePanel) {
+      elements.openSidePanelButton.classList.remove('is-hidden');
+    } else {
+      elements.openSidePanelButton.classList.add('is-hidden');
+    }
+  }
 
   // ---- Sync usage indicator ----
   if (elements.syncUsage) {
@@ -270,7 +298,7 @@ async function handleModeSelect(mode) {
   // If a domain entry exists, we keep its enabled flag and only
   // change mode.
   const parsed = SHARED.parseDomainSetting(state.domainEntry);
-  const enabled = parsed.enabled;
+  const enabled = state.domainEntry === null ? true : parsed.enabled;
   await writeDomainSettings({ [state.hostname]: { enabled, mode } });
 }
 
@@ -285,7 +313,7 @@ async function writeDomainSettings(patch) {
   }
   writeDomainSettingsPromise = (async () => {
     try {
-      const fresh = await SHARED.storageGet(chrome.storage.sync, SHARED.STORAGE_DEFAULTS);
+      const fresh = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
       const merged = (fresh && fresh.domainSettings) || state.domainSettings;
       const updatedDomainSettings = { ...merged, ...patch };
       const result = await SHARED.safeSyncSet({ domainSettings: updatedDomainSettings }, chrome.storage.local);
@@ -313,12 +341,37 @@ async function handleSessionToggle() {
   }
 }
 
+function handleOpenOptions() {
+  chrome.runtime.openOptionsPage();
+}
+
+async function handleOpenSidePanel() {
+  if (!chrome.sidePanel || typeof chrome.sidePanel.open !== 'function') {
+    handleOpenOptions();
+    return;
+  }
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && typeof tab.windowId === 'number') {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+      return;
+    }
+  } catch (_) {
+    // Fall through to options page.
+  }
+  handleOpenOptions();
+}
+
 // ---- Wire up ----
 elements.toggleButton.addEventListener('click', handleGlobalToggle);
 elements.domainToggle.addEventListener('click', handleDomainToggle);
 elements.modeLite.addEventListener('click', () => handleModeSelect(SHARED.MODE_LITE));
 elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MODE_ULTIMATE));
 elements.sessionButton.addEventListener('click', handleSessionToggle);
+elements.openOptionsButton.addEventListener('click', handleOpenOptions);
+if (elements.openSidePanelButton) {
+  elements.openSidePanelButton.addEventListener('click', handleOpenSidePanel);
+}
 
 // Re-render whenever storage changes — covers both same-tab updates
 // and the rare case where another popup instance wrote first.

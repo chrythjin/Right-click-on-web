@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Right-click on Web 설정</title>
+    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="options-shell" aria-labelledby="title">
+      <header class="options-hero">
+        <p class="eyebrow">Right Click UNLOCKER</p>
+        <h1 id="title">전체 사이트 설정</h1>
+        <p class="subtitle">전역 동작과 저장된 사이트별 완화 수준을 한곳에서 관리합니다.</p>
+        <p class="options-help side-panel-hint is-hidden">이 화면은 Chrome 사이드 패널에서도 그대로 표시됩니다. 페이지와 동시에 열어 두고 사이트를 관리해 보세요.</p>
+      </header>
+
+      <section class="status-card options-global" aria-live="polite">
+        <div>
+          <p class="label">전역 상태</p>
+          <p id="globalStatus" class="status-text">상태 확인 중</p>
+          <p class="options-help">도메인별 또는 세션 설정이 없을 때 적용되는 기본값입니다.</p>
+        </div>
+        <button id="globalToggle" class="toggle-button" type="button" aria-pressed="true">ON</button>
+      </section>
+
+      <section class="options-section" aria-labelledby="sitesTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">저장된 사이트</p>
+            <h2 id="sitesTitle">도메인별 설정</h2>
+          </div>
+          <p id="siteCount" class="site-count">0개</p>
+        </div>
+        <p class="options-help">상위 도메인 설정은 하위 도메인에도 적용됩니다. 삭제하면 해당 사이트는 전역 기본값을 다시 따릅니다.</p>
+        <div id="siteList" class="site-list" aria-live="polite"></div>
+      </section>
+
+      <section class="options-section options-info" aria-labelledby="storageTitle">
+        <p class="label">저장소</p>
+        <h2 id="storageTitle">동기화 상태</h2>
+        <p id="syncUsage" class="options-help">동기화 상태 확인 중</p>
+        <p class="options-help">설정만 브라우저 동기화에 저장되며, 페이지 내용이나 복사한 텍스트는 저장하지 않습니다.</p>
+      </section>
+    </main>
+    <template id="siteRowTemplate">
+      <article class="site-row">
+        <div class="site-row-header">
+          <div>
+            <h3 class="site-hostname"></h3>
+            <p class="site-state"></p>
+          </div>
+          <button class="toggle-button toggle-small site-toggle" type="button" aria-pressed="true">ON</button>
+        </div>
+        <div class="site-row-actions">
+          <div class="mode-toggle" role="radiogroup" aria-label="사이트 완화 모드">
+            <button class="mode-button site-mode-lite" type="button" role="radio">Lite</button>
+            <button class="mode-button site-mode-ultimate" type="button" role="radio">Ultimate</button>
+          </div>
+          <button class="delete-button" type="button">설정 삭제</button>
+        </div>
+      </article>
+    </template>
+    <script src="shared.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,40 +1,43 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-08 (updated via v0.3.0-alpha implementation)
-**Commit:** 5b935cb / main
-**Version:** 0.3.0-alpha (manifest.json)
+**Generated:** 2026-08-09 (v0.6.0 modernization)
+**Version:** 0.6.0 (manifest.json)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
 ## OVERVIEW
 
-Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). No npm, no bundler — loaded directly as unpacked extension.
+Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernizes the extension for current Chrome MV3 trends**: it adds a context menu on the browser action, opens the options page inside Chrome's side panel when the host supports it, follows `prefers-color-scheme`, and surfaces a friendly notice when `chrome.storage.session` is missing (e.g. current Firefox MV3). No npm, no bundler — loaded directly as unpacked extension.
 
 ## STRUCTURE
 
 ```
 ./
-├── manifest.json          # MV3 config — declares TWO content_scripts (isolated + MAIN)
-├── shared.js              # v0.3.0: shared helpers — PUBLIC_SUFFIX_BLOCKLIST,
+├── manifest.json          # MV3 config — content scripts + Chrome/Firefox options/side panel + browser action context menu
+├── shared.js              # v0.5.0: shared helpers — domain/session/sync/mode,
 │                          #   resolveDomainKey, getHostname, isDomainEnabled,
-│                          #   storageGet/Set Promise wrappers. Loaded by content.js,
+│                          #   storageGet/Set Promise wrappers + fallback markers. Loaded by content.js,
 │                          #   popup.js, and background.js (via importScripts).
 ├── content.js             # ISOLATED world: DOM cleanup, attribute removal, capture-phase
 │                          #   event interceptors, MutationObserver, periodic rescan,
 │                          #   shadow-root recursion, stats (`window.__rightClickOnWebStats`)
-│                          #   + v0.3.0 async resolveEnabled() + resolveAndApply()
+│                          #   + v0.5.0 Lite/Ultimate CSS mode gating
 ├── content-main.js        # MAIN world (new in v0.2.0): prototype patches for
 │                          #   EventTarget.prototype.addEventListener (sentinel no-op)
 │                          #   and Element.prototype.attachShadow (closed → open)
 ├── background.js          # Service worker — initializes default storage on install
-│                          #   + startup; v0.3.0 migrates pre-v0.3.0 storage shape
+│                          #   + startup; v0.3.0-v0.6.0 storage migrations; v0.6.0
+│                          #   context menus, side panel activation, sync fallback rebuild
 ├── popup.html/css/js      # Toggle UI (Korean, 340px, motorsport red/black/gold)
-│                          #   + v0.3.0 domain-card + session-button
+│                          #   + v0.5.0 domain/session/mode/sync-usage controls
+│                          #   + v0.6.0 Firefox notice + side panel entry, dark mode
+├── options.html/css/js    # Full settings dashboard — stored-domain ON/OFF/mode/delete management
+│                          #   + v0.6.0 side panel hint, dark mode
 ├── popup-preview.html     # Standalone ASCII popup preview (NOT loaded by extension)
 ├── icons/                 # icon128.png, icon512.png (referenced from manifest.json `icons` key)
 ├── assets/screenshots/    # test-page.png — 1280×800 store submission screenshot
-├── tests/manual/          # blocked-page.html — manual QA harness with 10 scenarios
-│                          #   (8 v0.2.0 + 2 v0.3.0); screenshot.png — visual reference
+├── tests/manual/          # blocked-page.html — manual QA harness with 11 scenarios
+│                          #   (8 v0.2.0 + 2 v0.3.0 + Lite/Ultimate); screenshot.png — visual reference
 └── docs/                  # store-submission-plan.md, chrome-web-store-requirements.md,
                            #   deployment-manual.md, store-listing.md,
                            #   benchmarking-roadmap.md (single master plan: competitor
@@ -51,15 +54,17 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | DOM cleanup, attribute removal, capture-phase interceptors, MutationObserver, periodic rescan | `content.js` | ISOLATED world; single global `RIGHT_CLICK_ON_WEB` config object |
 | MAIN-world prototype patches (`addEventListener`, `attachShadow`) | `content-main.js` | Runs FIRST at document_start; sentinel listener preserves AbortSignal spec contract |
 | `BLOCKED_EVENT_NAMES` ↔ `RIGHT_CLICK_ON_WEB.blockedEvents` sync | cross-reference between `content-main.js:52` and `content.js:14` | Subset split: MAIN blocks only blocking-only events; ISOLATED handles the rest with editable-target exemption |
-| Per-domain ON/OFF resolution (v0.3.0) | `content.js` `resolveEnabled()` + `shared.js` `resolveDomainKey()` | Reads `chrome.storage.local.domainSettings`; walks parent-domain labels until match; bails on public-suffix entries |
+| Per-domain ON/OFF resolution (v0.3.0) | `content.js` `resolveEnabled()` + `shared.js` `resolveDomainKey()` | Reads merged sync/local domainSettings; walks parent labels until a public-suffix boundary |
 | Session-mode activation (v0.3.0) | `content.js` `resolveEnabled()` + `popup.js` `handleSessionToggle()` | Uses `chrome.storage.session`; transient (cleared on browser shutdown); session key format `session:<hostname>` |
 | Multi-layer priority resolution (v0.3.0) | `content.js` `resolveEnabled()` + race-condition guard `resolveAndApply()` | session > domain > global; `resolvePromise` coalesces concurrent onChanged fires into one in-flight resolve |
 | Extension ON/OFF + per-domain + session toggle UI | `popup.js` + `popup.html` | Three controls: global toggle, domain-card toggle, session button |
-| Default storage init + migration | `background.js` | `chrome.runtime.onInstalled` + `onStartup`; preserves pre-v0.3.0 `enabled` flag and adds `domainSettings: {}` default |
-| Manifest permissions | `manifest.json` | `storage` + `activeTab` (v0.3.0, for current-tab hostname query) + `<all_urls>` host_permissions |
+| Stored-domain settings dashboard | `options.html` + `options.js` | Global toggle plus all stored domains' ON/OFF, Lite/Ultimate and deletion controls |
+| Default storage init + migration | `background.js` | Initializes defaults, migrates local→sync on update, and normalizes legacy boolean domain entries |
+| Browser action context menu + side panel activation (v0.6.0) | `background.js` + `manifest.json` | `chrome.contextMenus` entries on the action plus `chrome.sidePanel.open` from popup/menu with options-page fallback |
+| Manifest UI/browser metadata | `manifest.json` | `options_ui` opens the shared dashboard; `side_panel.default_path` mirrors it; `contextMenus` + `sidePanel` permissions; Gecko ID declares Firefox packaging metadata; `storage` + `activeTab` + `<all_urls>` remain required |
 | Runtime stats for QA | `window.__rightClickOnWebStats` (set in `content.js`) | Counters for attribute removals, event interceptions, overlays, shadow roots, periodic rescans + v0.3.0 `resolveSource` / `matchedDomain` diagnostics + v0.5.0 `mode` (lite/ultimate) |
-| Manual QA harness (10 scenarios incl. v0.3.0 domain/session) | `tests/manual/blocked-page.html` | Korean UI, dynamic blocking-element generator; section 9 = domain, section 10 = session |
-| Popup UI preview (browser-open) | `popup-preview.html` | standalone ASCII-art, NOT loaded by extension; v0.2.0 only — needs update for v0.3.0 UI |
+| Manual QA harness (11 scenarios incl. v0.5.0 mode) | `tests/manual/blocked-page.html` | Korean UI; section 9 = domain, section 10 = session, section 11 = Lite/Ultimate |
+| Popup UI preview (browser-open) | `popup-preview.html` | standalone ASCII-art, NOT loaded by extension; reflects sync usage and Lite/Ultimate UI |
 | Store submission | `docs/store-submission-plan.md` | step-by-step guide |
 | Chrome requirements | `docs/chrome-web-store-requirements.md` | asset specs, policy |
 | Deployment manual | `docs/deployment-manual.md` | end-to-end release/deploy procedure |
@@ -77,7 +82,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 |--------|------|----------|------|
 | `RIGHT_CLICK_ON_WEB_SHARED` | const export | `shared.js` (IIFE) | PUBLIC_SUFFIX_BLOCKLIST, MAX_DOMAIN_MATCH_DEPTH, STORAGE_DEFAULTS, SESSION_KEY_PREFIX, sessionKeyFor, getHostname, resolveDomainKey, isDomainEnabled, storageGet/Set/Remove, isSessionStorageAvailable |
 | `PUBLIC_SUFFIX_BLOCKLIST` | const Set | `shared.js` | ~40 multi-part TLDs (co.uk, co.kr, com.au, etc.); blocks accidental blanket-match in resolveDomainKey |
-| `resolveDomainKey(hostname, settings)` | fn | `shared.js` | Walks parent-domain labels up to MAX_DOMAIN_MATCH_DEPTH=5; returns matched key or null; skips public-suffix entries |
+| `resolveDomainKey(hostname, settings)` | fn | `shared.js` | Walks parent-domain labels up to MAX_DOMAIN_MATCH_DEPTH=5; returns matched key or null; stops at public-suffix entries |
 | `getHostname(href)` | fn | `shared.js` | URL parsing; returns '' for non-http(s) or invalid; used by both popup and content script to gate domain controls |
 | `isDomainEnabled(globalEnabled, settings, hostname)` | fn | `shared.js` | Boolean decision: global OFF wins everywhere; otherwise domain entry wins over global |
 | `storageGet/Set/Remove(area, ...)` | fn | `shared.js` | Promise wrappers around chrome.storage callback API; surfaces chrome.runtime.lastError as rejection |
@@ -90,8 +95,8 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | `neutralizeBlockOverlay(element)` | fn | `content.js` | Sets `pointer-events:none!important` on empty absolute/fixed overlays |
 | `addEventInterceptors()` | fn | `content.js` | Registers capture-phase `stopImmediatePropagation` listeners via single `AbortController` signal |
 | `startPeriodicRescan()` | fn | `content.js` | 2s `setInterval` → idle-deferred full-DOM rescan; pauses while `visibilityState === 'hidden'` |
-| `setEnabled(next)` | fn | `content.js` | Switches ON/OFF; called by resolveAndApply() in v0.3.0 |
-| `resolveEnabled()` | async fn | `content.js` (v0.3.0) | Reads session > local.domainSettings > local.enabled; returns `{enabled, source, hostname, matchedKey}` |
+| `setEnabled(next, mode)` | fn | `content.js` | Switches ON/OFF and immediately applies Lite/Ultimate CSS changes |
+| `resolveEnabled()` | async fn | `content.js` | Reads session > merged domainSettings > global enabled; returns `{enabled, source, hostname, matchedKey, mode}` |
 | `resolveAndApply()` | fn | `content.js` (v0.3.0) | Race-condition guard; coalesces concurrent onChanged fires into one in-flight promise via `resolvePromise` singleton |
 | `mainWorldPatch()` (IIFE) | fn | `content-main.js:42` | Idempotent sentinel; patches `EventTarget.prototype.addEventListener` + `Element.prototype.attachShadow` |
 | `BLOCKED_EVENT_NAMES` | const | `content-main.js:52` | `['contextmenu','selectstart','copy','cut','paste','dragstart']` — subset of `content.js` `blockedEvents` |
@@ -119,6 +124,7 @@ Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-
 
 - **`host_permissions: ["<all_urls>"]`** — REQUIRED, not a mistake (content script needs it)
 - **`activeTab` permission (v0.3.0)** — REQUIRED for popup to read current tab's hostname via `chrome.tabs.query`. Do not remove without also removing the domain-card UI.
+- **`contextMenus` + `sidePanel` permissions (v0.6.0)** — REQUIRED for the browser action context menu and the side-panel shortcut. They are no-ops on browsers without the matching API; the popup falls back to `chrome.runtime.openOptionsPage()`.
 - **`world: "MAIN"` content script is NOT removable by popup toggle** — prototype patches apply at `document_start` and cannot be undone mid-page-life. Full OFF requires extension disable + tab reload (or refresh).
 - **OFF mode on `content.js`** — removes injected CSS / event listeners / observer / rescan timer but does NOT restore inline blocking attributes removed while ON (by design; never restores page state it didn't observe)
 - **No remote code loading, no telemetry, no network calls** — Chrome Web Store policy violation
@@ -151,8 +157,8 @@ Cannot bypass:
 - **Periodic rescan (v0.2.0)** — `startPeriodicRescan` runs every 2s via `setInterval`, idle-deferred via `requestIdleCallback` (1s `setTimeout` fallback). Paused while tab is hidden (`document.visibilityState === 'hidden'`). Catches mutations that `MutationObserver` misses on detached subtrees.
 - **Editable elements are preserved** — `isEditableElement()` skips `input/textarea/select/[contenteditable]` so user typing/right-click-paste in form fields still works as native (ISOLATED capture-phase interceptor only).
 - **Shared module (v0.3.0)** — `shared.js` is loaded by `content.js` (via manifest content_scripts[0]), `popup.js` (via popup.html script tag), and `background.js` (via `importScripts`). All three contexts see the same `RIGHT_CLICK_ON_WEB_SHARED` global. This avoids drift in `resolveDomainKey` / `getHostname` / `isDomainEnabled` semantics.
-- **Resolution priority (v0.3.0)** — `session > domain > global`. chrome.storage.session (transient) > chrome.storage.local.domainSettings[hostname] (per-domain entry, with parent-label fallback) > chrome.storage.local.enabled (global). Same rules in popup (UI label) and content script (action); they MUST agree.
-- **Public suffix blocklist (v0.3.0)** — `resolveDomainKey` skips entries that match the curated `PUBLIC_SUFFIX_BLOCKLIST` (~40 multi-part TLDs like co.uk, co.kr, com.au) so a user accidentally registering `"co.uk": false` does not blanket-disable every .co.uk site. Not a full PSL — extension of the list is preferred over switching to a runtime PSL library.
+- **Resolution priority (v0.3.0-v0.4.0)** — `session > domain > global`. chrome.storage.session (transient) > merged sync/local domainSettings[hostname] (per-domain entry, with parent-label fallback) > merged sync/local enabled (global). Sync normally wins over local, except a local quota-fallback marker preserves the latest local user choice until a sync write succeeds. Popup and content script MUST agree.
+- **Public suffix blocklist (v0.3.0)** — `resolveDomainKey` stops at curated `PUBLIC_SUFFIX_BLOCKLIST` entries (~40 multi-part TLDs like co.uk, co.kr, com.au), so accidental `"co.uk"` or `"uk"` entries cannot blanket-affect a suffix family. Not a full PSL — extend this set rather than adding a runtime PSL library.
 - **Domain matching depth cap (v0.3.0)** — `MAX_DOMAIN_MATCH_DEPTH = 5` caps recursive label walking. Real hostnames rarely exceed 5 labels; the cap prevents runaway recursion on malformed inputs.
 - **Hostname guard (v0.3.0)** — `getHostname()` returns '' for non-http(s) schemes (chrome://, about:blank, file://, extension pages). Popup and content script both treat empty hostname as "global only" — no domainSettings or session key lookup.
 - **Race-condition guard (v0.3.0)** — `resolveAndApply()` is the only entry point for re-resolution. It coalesces concurrent `chrome.storage.onChanged` fires into a single in-flight promise via the `resolvePromise` module-level singleton. Callers that fire while a resolve is in flight receive the same promise.

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Restores common right-click, text selection, copy, and drag interactions on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
@@ -13,6 +13,13 @@
     "default_icon": {
       "128": "icons/icon128.png"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "side_panel": {
+    "default_path": "options.html"
   },
   "background": {
     "service_worker": "background.js"
@@ -32,7 +39,13 @@
       "world": "MAIN"
     }
   ],
-  "minimum_chrome_version": "111",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["<all_urls>"]
+  "minimum_chrome_version": "114",
+  "permissions": ["storage", "activeTab", "contextMenus", "sidePanel"],
+  "host_permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "right-click-on-web@chryth.github.io",
+      "strict_min_version": "128.0"
+    }
+  }
 }
