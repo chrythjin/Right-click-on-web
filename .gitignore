@@ -4,6 +4,7 @@
 .cortexkit/
 .codegraph/
 .opencode/
+.playwright-mcp/
 
 # Local history & backup (per project AGENTS.md)
 history/
