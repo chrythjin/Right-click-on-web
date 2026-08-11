@@ -28,9 +28,7 @@ const RIGHT_CLICK_ON_WEB = {
     'oncopy',
     'oncut',
     'onpaste',
-    'ondragstart',
-    'onmousedown',
-    'onmouseup'
+    'ondragstart'
   ],
   blockedEvents: [
     'contextmenu',
@@ -42,10 +40,7 @@ const RIGHT_CLICK_ON_WEB = {
     'dragover',
     'drop',
     'mousedown',
-    'mouseup',
-    'touchstart',
-    'touchend',
-    'touchmove'
+    'mouseup'
   ],
   // Periodic re-scan interval (ms). Catches anything MutationObserver
   // missed, e.g. attributeFilter-blind mutations on detached subtrees
@@ -182,9 +177,13 @@ function isEditableElement(target) {
   return target.isContentEditable || Boolean(target.closest('input, textarea, select'));
 }
 
+function isNonSecondaryMouseInput(eventName, event) {
+  return (eventName === 'mousedown' || eventName === 'mouseup') && event.button !== 2;
+}
+
 function handleInterceptedEvent(eventName) {
   return (event) => {
-    if (isEditableElement(event.target)) {
+    if (isEditableElement(event.target) || isNonSecondaryMouseInput(eventName, event)) {
       return;
     }
     bumpEventInterception(eventName);

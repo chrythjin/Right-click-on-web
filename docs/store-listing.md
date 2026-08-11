@@ -1,4 +1,4 @@
-# Chrome Web Store 등록 정보 (v0.6.1 스토어 출시용)
+# Chrome Web Store 등록 정보 (v0.6.3 스토어 출시용)
 
 > 이 문서는 Developer Dashboard 입력용 최종 복사본입니다. 각 항목을 대시보드에 그대로 붙여넣으면 됩니다.
 > ZIP 패키징 시 반드시 `content-main.js`를 포함하세요 (듀얼 스크립트 아키텍처 — AGENTS.md 참조).
@@ -10,7 +10,7 @@
 | 항목 | 값 |
 |------|-----|
 | **이름 (Name)** | Right-click on Web |
-| **버전 (Version)** | 0.6.1 |
+| **버전 (Version)** | 0.6.3 |
 | **카테고리** | 생산성 (Productivity) |
 | **언어** | 한국어 (+ 영어 manifest description) |
 | **단일 목적 (Single Purpose)** | 웹페이지의 우클릭·드래그 선택·복사 차단 스크립트 완화 |
@@ -37,10 +37,10 @@
   <li>텍스트 선택 허용 (selectstart, user-select CSS)</li>
   <li>복사/잘라내기/붙여넣기 차단 완화 (copy, cut, paste)</li>
   <li>이미지·텍스트 드래그 복원 (dragstart)</li>
-  <li>마우스·터치 조작 차단 완화 (mousedown, mouseup, touch*)</li>
+  <li>오른쪽 버튼 입력 차단 완화 및 정상 클릭·터치 동작 보존</li>
   <li>차단용 투명 오버레이 무력화 (pointer-events)</li>
   <li>Closed Shadow DOM 내부 차단 요소 제거 (attachShadow 패치)</li>
-  <li>페이지가 차단 스크립트를 다시 추가해도 2초마다 자동 재검사</li>
+  <li>페이지가 차단 스크립트를 다시 추가해도 5초마다 자동 재검사</li>
   <li>팝업에서 전역·현재 사이트 ON/OFF 및 세션 임시 활성화</li>
   <li>Lite/Ultimate 완화 모드와 전체 사이트 설정 대시보드</li>
   <li>Chrome 사이드 패널에서 페이지를 보면서 도메인 관리 (v0.6.0)</li>
@@ -101,7 +101,7 @@
 ## 8. ZIP 패키징 명령 (content-main.js 포함 — 필수!)
 
 ```powershell
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.1.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.3.zip" -Force
 ```
 
 **제외**: `.git`, `.serena`, `.omo`, `history`, `docs`, `tests`, `popup-preview.html`, `README.md`
@@ -117,6 +117,6 @@ Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-
 - [x] 개인정보처리방침 파일 작성 (`docs/privacy-policy.html`)
 - [x] 개인정보처리방침 URL 공개 확인
 - [x] 스크린샷 1장 이상 (`assets/screenshots/test-page.png`, 1280×800)
-- [x] ZIP 패키지 생성 + 검증 (`right-click-on-web-v0.6.1.zip`)
-- [x] 출시 버전 `0.6.1` 확정
+- [x] ZIP 패키지 생성 + 검증 (`right-click-on-web-v0.6.3.zip`)
+- [x] 출시 버전 `0.6.3` 확정
 - [ ] Developer Dashboard 등록 및 제출

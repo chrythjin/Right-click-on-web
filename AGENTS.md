@@ -1,13 +1,13 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-11 (v0.6.2 live-site bypass compatibility)
-**Version:** 0.6.2 (manifest.json)
+**Generated:** 2026-08-12 (v0.6.3 normal-input compatibility)
+**Version:** 0.6.3 (manifest.json)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
 ## OVERVIEW
 
-Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. **v0.6.2 installs reversible ISOLATED-world capture interceptors synchronously at `document_start`**, closing the storage-resolution race exploited by early page capture handlers. No npm, no bundler — loaded directly as unpacked extension.
+Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. **v0.6.2 installs reversible ISOLATED-world capture interceptors synchronously at `document_start`**, closing the storage-resolution race exploited by early page capture handlers. **v0.6.3 limits mouse interception to the secondary button and preserves normal left/middle-click and touch input chains.** No npm, no bundler — loaded directly as unpacked extension.
 
 ## STRUCTURE
 
@@ -87,7 +87,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | `isDomainEnabled(globalEnabled, settings, hostname)` | fn | `shared.js` | Boolean decision: global OFF wins everywhere; otherwise domain entry wins over global |
 | `storageGet/Set/Remove(area, ...)` | fn | `shared.js` | Promise wrappers around chrome.storage callback API; surfaces chrome.runtime.lastError as rejection |
 | `isSessionStorageAvailable()` | fn | `shared.js` | Defensive runtime check for chrome.storage.session (Chrome 102+); content-script access is enabled by the background worker on install/startup |
-| `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (8), blockedEvents (13), rescanIntervalMs (5000), styleId, markerAttribute |
+| `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (6), blockedEvents (10), rescanIntervalMs (5000), styleId, markerAttribute |
 | `createStats()` | fn | `content.js` | Initializes counters: attributeRemovals, eventInterceptions, overlaysNeutralized, shadowRootsScanned, periodicRescans + v0.3.0 resolveSource, matchedDomain |
 | `enableUnlocker()` / `disableUnlocker()` | fn | `content.js` | Idempotent mount/unmount of CSS + listeners + observer + rescan timer |
 | `removeBlockingAttributes(root)` | fn | `content.js` | Recursive: walks root, removes blocked attrs, unlocks IDL descriptors, neutralizes overlays, recurses into open shadow roots |
@@ -113,7 +113,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 # Load unpacked: chrome://extensions → Developer mode → Load unpacked → select this folder
 
 # Package for store submission (must include shared.js + BOTH content scripts):
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web.zip" -Force
 # Exclude from ZIP: .git, .serena, .omo, history, docs, tests, popup-preview.html, README.md, assets/, .opencode/
 
 # GitHub Pages source is docs/ — push to main to publish privacy-policy.html at:
@@ -150,7 +150,7 @@ Cannot bypass:
 
 ## NOTES
 
-- **Dual-script contract (v0.2.0)** — `content-main.js` MUST run before `content.js` on the same frame. Both declare `run_at: "document_start"`, and Chrome guarantees manifest-declaration order. The MAIN-world patch neutralizes blocking listeners at the prototype level; the ISOLATED-world script handles DOM cleanup and capture-phase interception for events with legitimate non-blocking uses (`dragover`, `drop`, `mousedown`, `mouseup`, `touchstart/end/move`).
+- **Dual-script contract (v0.2.0)** — `content-main.js` MUST run before `content.js` on the same frame. Both declare `run_at: "document_start"`, and Chrome guarantees manifest-declaration order. The MAIN-world patch neutralizes blocking listeners at the prototype level; the ISOLATED-world script handles DOM cleanup and capture-phase interception for events with legitimate non-blocking uses (`dragover`, `drop`, `mousedown`, `mouseup`).
 - **MAIN world sentinel rationale (v0.2.0)** — `content-main.js` registers a no-op listener (`sentinelListener`) instead of silently returning. This preserves the AbortSignal spec contract: pages using `addEventListener('contextmenu', handler, {signal})` can later `controller.abort()` or `removeEventListener` without throwing.
 - **Closed → open Shadow DOM conversion (v0.2.0)** — `patchedAttachShadow` builds `Object.create(init)` to preserve inherited + non-enumerable members of the caller's init dictionary, then overrides only `mode`. Original page-side references to the shadow root remain intact.
 - **IDL property unlock (v0.2.0)** — `clearLockedIdlAttribute` handles pages that lock `oncontextmenu` via `Object.defineProperty(el, 'oncontextmenu', {configurable:false})`. It reads the descriptor, redefines it with `configurable:true`, then nulls the value.

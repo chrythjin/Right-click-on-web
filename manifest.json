@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Restores common right-click, text selection, copy, and drag interactions on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",

@@ -222,6 +222,18 @@
       <p>실행 통계의 <code>mode</code> 필드가 현재 적용 모드(<code>"lite"</code> 또는 <code>"ultimate"</code>)를 표시합니다.</p>
     </section>
 
+    <section>
+      <h2>12. 일반 클릭 동작 보존</h2>
+      <p class="hint">확장 ON 상태에서도 사이트의 정상적인 <code>mousedown</code>, <code>mouseup</code>, <code>click</code> 처리 흐름은 유지되어야 합니다. 아래 버튼을 한 번 누르면 세 이벤트가 모두 전달되어 성공 상태가 표시되어야 합니다.</p>
+      <button id="interactionButton"
+              type="button"
+              onmousedown="this.dataset.mouseDown = 'true'"
+              onmouseup="this.dataset.mouseUp = 'true'">
+        일반 클릭 동작 확인
+      </button>
+      <p id="interactionStatus">상태: 확인 전</p>
+    </section>
+
     <p id="dynamicTarget"></p>
     <p>
       <button id="addBlocker" type="button">동적 차단 요소 추가</button>
@@ -388,6 +400,15 @@
                ondragstart="return false"></div>
         `;
         document.getElementById('dynamicTarget').replaceChildren(host);
+      });
+
+      // Section 12 — 정상적인 사이트 입력 이벤트 보존 검증
+      document.getElementById('interactionButton').addEventListener('click', (event) => {
+        const button = event.currentTarget;
+        const preserved = button.dataset.mouseDown === 'true' && button.dataset.mouseUp === 'true';
+        document.getElementById('interactionStatus').textContent = preserved
+          ? '상태: 성공 (mousedown → mouseup → click 전달됨)'
+          : '상태: 실패 (확장이 정상 입력 이벤트를 차단함)';
       });
 
       document.getElementById('showStats').addEventListener('click', () => {
