@@ -24,6 +24,13 @@ const state = {
   domainSettings: {},
   domainEntry: null,
   domainMode: SHARED.DEFAULT_MODE,
+  // v0.6.2: parent-domain inheritance hint. matchedKey is the key
+  // resolveDomainKey() actually picked — which can be a parent of
+  // state.hostname (e.g. "example.com" while visiting www.example.com).
+  // We surface that to the user so the hint is honest, and so the
+  // user understands that toggling here creates a per-site shadow
+  // entry rather than flipping the parent's value.
+  matchedKey: null,
   sessionActive: false,
   effectiveEnabled: true,
   effectiveMode: SHARED.DEFAULT_MODE,
@@ -89,6 +96,12 @@ async function loadState() {
     : {};
   state.domainEntry = state.hostname && Object.prototype.hasOwnProperty.call(state.domainSettings, state.hostname)
     ? state.domainSettings[state.hostname]
+    : null;
+  // v0.6.2: resolve the actual governing key, which may be a parent
+  // domain. Used both for the inheritance hint and to keep the
+  // effective decision in lockstep with the content script.
+  state.matchedKey = state.hostname
+    ? SHARED.resolveDomainKey(state.hostname, state.domainSettings)
     : null;
   // v0.5.0: domainEntry is now a { enabled, mode } object (or
   // unmigrated boolean). Normalize to derive domainMode for UI
@@ -173,6 +186,17 @@ function render() {
   if (state.sessionActive) {
     elements.domainHint.textContent = '세션 모드 활성 — 페이지 새로고침 후 도메인 설정 적용';
     elements.domainHint.classList.add('is-domain-off');
+  } else if (state.matchedKey && state.matchedKey !== state.hostname) {
+    // Parent-domain inheritance — the entry that governs this tab is
+    // stored under a parent key (e.g. example.com while visiting
+    // www.example.com). The user's own hostname has no entry, so
+    // toggling or changing mode here will create a per-hostname
+    // shadow entry rather than flipping the parent (which would
+    // affect sibling subdomains).
+    const parentEntry = SHARED.parseDomainSetting(state.domainSettings[state.matchedKey]);
+    const parentOff = parentEntry.enabled === false;
+    elements.domainHint.textContent = `상위 도메인(${state.matchedKey}) 설정 ${parentOff ? 'OFF' : 'ON'} 상속 중 — 토글/모드 선택 시 ${state.hostname} 전용 설정이 생성됩니다`;
+    elements.domainHint.classList.toggle('is-domain-off', parentOff);
   } else if (state.domainEntry === null) {
     elements.domainHint.textContent = `기본값 따름 (${state.globalEnabled ? '전역 ON' : '전역 OFF'})`;
     elements.domainHint.classList.remove('is-domain-off');
@@ -334,10 +358,20 @@ async function handleSessionToggle() {
     return;
   }
   const sessionKey = SHARED.sessionKeyFor(state.hostname);
-  if (state.sessionActive) {
-    await SHARED.storageRemove(chrome.storage.session, [sessionKey]);
-  } else {
-    await SHARED.storageSet(chrome.storage.session, { [sessionKey]: true });
+  try {
+    if (state.sessionActive) {
+      await SHARED.storageRemove(chrome.storage.session, [sessionKey]);
+    } else {
+      await SHARED.storageSet(chrome.storage.session, { [sessionKey]: true });
+    }
+  } catch (err) {
+    // Surface a user-visible error rather than failing silently.
+    // Re-uses the sessionNotice slot so we don't add new DOM.
+    console.error('[Right-click on Web] session toggle failed', err);
+    if (elements.sessionNotice) {
+      elements.sessionNotice.textContent = `세션 토글 실패: ${(err && err.message) || err}`;
+      elements.sessionNotice.classList.remove('is-hidden');
+    }
   }
 }
 

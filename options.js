@@ -152,6 +152,9 @@ async function updateDomain(hostname, update) {
 }
 
 async function removeDomain(hostname) {
+  if (typeof window.confirm === 'function' && !window.confirm(`'${hostname}' 사이트 설정을 삭제하시겠습니까? 삭제 후 이 사이트는 전역 기본값을 따릅니다.`)) {
+    return;
+  }
   await persist(async () => {
     const settings = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
     const domainSettings = { ...(settings.domainSettings || {}) };

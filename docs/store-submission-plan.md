@@ -12,8 +12,8 @@
 | 2 | 스크린샷 캡처 (popup + 테스트 페이지) | ✅ 제출용 `assets/screenshots/test-page.png` 1280×800 확보 |
 | 3 | 개인정보처리방침 페이지 작성 + 호스팅 | ✅ GitHub Pages 공개 URL 확인 |
 | 4 | 스토어 설명 (짧은 설명 + 상세 설명) 작성 | ✅ 완료 (`docs/store-listing.md`) |
-| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | ✅ 카테고리=Productivity, 출시 버전=0.6.1 확정 |
-| 6 | ZIP 패키지 생성 및 최종 검증 | ✅ `right-click-on-web-v0.6.1.zip` 생성·검증 완료 |
+| 5 | 카테고리/설정값 결정 및 manifest/origin 정리 | ✅ 카테고리=Productivity, 출시 버전=0.6.2 확정 |
+| 6 | ZIP 패키지 생성 및 최종 검증 | ✅ `right-click-on-web-v0.6.2.zip` 생성·검증 완료 |
 | 7 | Developer Dashboard 제출 준비 완료 | ⬜ 계정 인증 후 업로드·제출 |
 
 ---
@@ -122,7 +122,7 @@ assets/screenshots/test-page.png     # 1280x800 또는 640x400
 ## 작업 5: 카테고리/설정값 결정 및 manifest 정리
 
 ### manifest.json 최종 점검
-- `version`: `0.6.1`
+- `version`: `0.6.2`
 - `description`: 영문 manifest 설명과 한국어 스토어 설명을 각각 사용
 - `action.default_icon`: 방금 만든 마우스 아이콘 연결됨 ✅
 
@@ -141,20 +141,20 @@ assets/screenshots/test-page.png     # 1280x800 또는 640x400
 ### 패키지 명령
 ```powershell
 # repo 루트에서 실행 (content-main.js 포함 필수 — v0.2.0 듀얼 스크립트)
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.1.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.2.zip" -Force
 ```
 
 ### 최종 검증 체크리스트
 - [x] ZIP 루트에 `manifest.json` 위치 확인
 - [x] `icons/icon128.png`, `icons/icon512.png` 포함
 - [x] `.git`, `.serena`, `.omo`, `.codegraph`, `.playwright-mcp`, `history`, `docs`, `tests`, `assets`, `popup-preview.html`, `README.md`, `AGENTS.md` 제외됨
-- [x] manifest `version`: `0.6.1`
+- [x] manifest `version`: `0.6.2`
 - [x] `permissions`: `storage`, `activeTab`, `contextMenus`, `sidePanel`
 - [x] `host_permissions`: `<all_urls>`
 
 ### 제출용 파일
 ```
-right-click-on-web-v0.6.1.zip   # 스토어에 업로드할 패키지
+right-click-on-web-v0.6.2.zip   # 스토어에 업로드할 패키지
 ```
 
 ---
@@ -166,7 +166,7 @@ right-click-on-web-v0.6.1.zip   # 스토어에 업로드할 패키지
 - [x] 스크린샷 1장 이상 준비됨 (`assets/screenshots/test-page.png`)
 - [x] 개인정보처리방침 URL 확보됨
 - [x] 스토어 설명 작성됨
-- [x] ZIP 패키지 생성됨 (`right-click-on-web-v0.6.1.zip`)
+- [x] ZIP 패키지 생성됨 (`right-click-on-web-v0.6.2.zip`)
 
 ### 제출 단계
 1. [Developer Dashboard](https://chrome.google.com/webstore/devconsole) 접속 → 새 항목
@@ -190,7 +190,7 @@ right-click-on-web-v0.6.1.zip   # 스토어에 업로드할 패키지
 
 ### 내가 진행할 수 있음 (자동화 가능)
 - [x] 스토어 설명 HTML 작성 → `docs/store-listing.md`에 저장
-- [x] manifest version `0.6.1` 확정
+- [x] manifest version `0.6.2` 확정
 - [x] ZIP 패키지 생성 (`content-main.js` 포함)
 - [x] 체크리스트 문서 최종 동기화
 

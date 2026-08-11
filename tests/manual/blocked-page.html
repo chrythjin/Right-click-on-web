@@ -393,13 +393,26 @@
       document.getElementById('showStats').addEventListener('click', () => {
         const panel = document.getElementById('counterPanel');
         const out = document.getElementById('counterOutput');
-        const stats = window.__rightClickOnWebStats;
+        // v0.6.2: read stats from the cross-world DOM channel —
+        // <script type="application/json" id="__rightClickOnWebStats">
+        // — written by content.js. window.__rightClickOnWebStats is
+        // set in the isolated world and not visible to page scripts.
+        const dom = document.getElementById('__rightClickOnWebStats');
+        const raw = dom ? dom.textContent : '';
         try {
-          out.textContent = stats
-            ? JSON.stringify(stats, null, 2)
-            : '통계 데이터 없음 (확장이 OFF이거나 로드 전)';
+          if (!raw || dom.getAttribute('data-right-click-on-web') !== 'true') {
+            out.textContent = '통계 데이터 없음 (확장이 OFF이거나 로드 전)';
+          } else {
+            const stats = JSON.parse(raw);
+            if (!stats || typeof stats !== 'object' ||
+                !stats.attributeRemovals || !stats.eventInterceptions ||
+                typeof stats.periodicRescans !== 'number') {
+              throw new Error('invalid stats schema');
+            }
+            out.textContent = JSON.stringify(stats, null, 2);
+          }
         } catch (error) {
-          out.textContent = '통계 데이터 직렬화 오류';
+          out.textContent = '통계 데이터 파싱 오류';
         }
         panel.hidden = !panel.hidden;
       });

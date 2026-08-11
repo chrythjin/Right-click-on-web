@@ -193,7 +193,7 @@ async function registerContextMenus() {
   });
   chrome.contextMenus.create({
     id: CONTEXT_MENU_IDS.OPEN_PANEL,
-    title: '사이트 패널에서 열기 (v0.6.0)',
+    title: '사이트 패널에서 열기',
     contexts: ['action']
   });
   chrome.contextMenus.create({

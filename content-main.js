@@ -49,12 +49,14 @@
   // RIGHT_CLICK_ON_WEB.blockedEvents in content.js.
   // MAIN world only suppresses events used almost exclusively for
   // blocking; the isolated world handles the rest.
+  //
+  // copy/cut/paste are intentionally excluded because the MAIN-world
+  // patch cannot exempt editable elements before a target is bound.
+  // The isolated-world capture interceptor handles blocking-only pages
+  // while preserving legitimate editor clipboard handlers.
   const BLOCKED_EVENT_NAMES = Object.freeze([
     'contextmenu',
     'selectstart',
-    'copy',
-    'cut',
-    'paste',
     'dragstart'
   ]);
 
@@ -65,6 +67,33 @@
   //
   const originalAddEventListener = EventTarget.prototype.addEventListener;
   const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
+
+  function isEditableTarget(target) {
+    return target instanceof Element && (
+      target.isContentEditable ||
+      Boolean(target.closest('input, textarea, select'))
+    );
+  }
+
+  function stopInlineBlocker(event) {
+    if (isEditableTarget(event.target)) {
+      return;
+    }
+    event.stopImmediatePropagation();
+  }
+
+  // Inline `oncontextmenu="return false"` handlers are not registered
+  // through addEventListener, and an ISOLATED-world capture listener does
+  // not reliably suppress their MAIN-world IDL handler in Chromium. Use
+  // the native method captured before patching so this guard itself is not
+  // replaced by the sentinel path below.
+  for (const eventName of BLOCKED_EVENT_NAMES) {
+    Reflect.apply(originalAddEventListener, document, [
+      eventName,
+      stopInlineBlocker,
+      { capture: true, passive: false }
+    ]);
+  }
 
   function normalizeEventType(type) {
     if (typeof type === 'symbol') {

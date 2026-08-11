@@ -1,13 +1,13 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-09 (v0.6.1 bypass-engine compatibility)
-**Version:** 0.6.1 (manifest.json)
+**Generated:** 2026-08-11 (v0.6.2 live-site bypass compatibility)
+**Version:** 0.6.2 (manifest.json)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
 ## OVERVIEW
 
-Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. No npm, no bundler — loaded directly as unpacked extension.
+Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. **v0.6.2 installs reversible ISOLATED-world capture interceptors synchronously at `document_start`**, closing the storage-resolution race exploited by early page capture handlers. No npm, no bundler — loaded directly as unpacked extension.
 
 ## STRUCTURE
 
@@ -87,19 +87,19 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | `isDomainEnabled(globalEnabled, settings, hostname)` | fn | `shared.js` | Boolean decision: global OFF wins everywhere; otherwise domain entry wins over global |
 | `storageGet/Set/Remove(area, ...)` | fn | `shared.js` | Promise wrappers around chrome.storage callback API; surfaces chrome.runtime.lastError as rejection |
 | `isSessionStorageAvailable()` | fn | `shared.js` | Defensive runtime check for chrome.storage.session (Chrome 102+); content-script access is enabled by the background worker on install/startup |
-| `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (8), blockedEvents (13), rescanIntervalMs (2000), styleId, markerAttribute |
+| `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (8), blockedEvents (13), rescanIntervalMs (5000), styleId, markerAttribute |
 | `createStats()` | fn | `content.js` | Initializes counters: attributeRemovals, eventInterceptions, overlaysNeutralized, shadowRootsScanned, periodicRescans + v0.3.0 resolveSource, matchedDomain |
 | `enableUnlocker()` / `disableUnlocker()` | fn | `content.js` | Idempotent mount/unmount of CSS + listeners + observer + rescan timer |
 | `removeBlockingAttributes(root)` | fn | `content.js` | Recursive: walks root, removes blocked attrs, unlocks IDL descriptors, neutralizes overlays, recurses into open shadow roots |
 | `clearLockedIdlAttribute(element, attr)` | fn | `content.js` | Bypasses `Object.defineProperty(el, 'oncontextmenu', {configurable:false})` by redefining descriptor + nulling value |
 | `neutralizeBlockOverlay(element)` | fn | `content.js` | Sets `pointer-events:none!important` on empty absolute/fixed overlays |
 | `addEventInterceptors()` | fn | `content.js` | Registers capture-phase `stopImmediatePropagation` listeners via single `AbortController` signal |
-| `startPeriodicRescan()` | fn | `content.js` | 2s `setInterval` → idle-deferred full-DOM rescan; pauses while `visibilityState === 'hidden'` |
+| `startPeriodicRescan()` | fn | `content.js` | 5s `setInterval` → idle-deferred full-DOM rescan; pauses while `visibilityState === 'hidden'` |
 | `setEnabled(next, mode)` | fn | `content.js` | Switches ON/OFF and immediately applies Lite/Ultimate CSS changes |
 | `resolveEnabled()` | async fn | `content.js` | Reads session > merged domainSettings > global enabled; returns `{enabled, source, hostname, matchedKey, mode}` |
 | `resolveAndApply()` | fn | `content.js` (v0.3.0) | Race-condition guard; coalesces concurrent onChanged fires into one in-flight promise via `resolvePromise` singleton |
 | `mainWorldPatch()` (IIFE) | fn | `content-main.js:42` | Idempotent sentinel; patches `EventTarget.prototype.addEventListener` + `Element.prototype.attachShadow` |
-| `BLOCKED_EVENT_NAMES` | const | `content-main.js:52` | `['contextmenu','selectstart','copy','cut','paste','dragstart']` — subset of `content.js` `blockedEvents` |
+| `BLOCKED_EVENT_NAMES` | const | `content-main.js:52` | `['contextmenu','selectstart','dragstart']` — subset of `content.js` `blockedEvents`. copy/cut/paste moved out in v0.6.2 to restore web-editor compatibility (Google Docs, Notion, etc.); the ISOLATED capture-phase interceptor already stops blocking-only pages via `stopImmediatePropagation`, and the `isEditableElement` exemption lets real editors' custom paste handlers run. |
 | `patchedAddEventListener(type, listener, options)` | fn | `content-main.js:72` | Mirrors native signature (string + String wrapper); replaces blocked types with sentinel no-op listener |
 | `patchedAttachShadow(init)` | fn | `content-main.js:114` | `Object.create(init)` + overrides `mode:'closed'` → `mode:'open'` |
 | `DEFAULT_SETTINGS` / `STORAGE_DEFAULTS` | const | `background.js` / `shared.js` | `{ enabled: true, domainSettings: {} }` — must stay tri-party-coordinated across popup/content/background |
@@ -154,7 +154,8 @@ Cannot bypass:
 - **MAIN world sentinel rationale (v0.2.0)** — `content-main.js` registers a no-op listener (`sentinelListener`) instead of silently returning. This preserves the AbortSignal spec contract: pages using `addEventListener('contextmenu', handler, {signal})` can later `controller.abort()` or `removeEventListener` without throwing.
 - **Closed → open Shadow DOM conversion (v0.2.0)** — `patchedAttachShadow` builds `Object.create(init)` to preserve inherited + non-enumerable members of the caller's init dictionary, then overrides only `mode`. Original page-side references to the shadow root remain intact.
 - **IDL property unlock (v0.2.0)** — `clearLockedIdlAttribute` handles pages that lock `oncontextmenu` via `Object.defineProperty(el, 'oncontextmenu', {configurable:false})`. It reads the descriptor, redefines it with `configurable:true`, then nulls the value.
-- **Periodic rescan (v0.2.0)** — `startPeriodicRescan` runs every 2s via `setInterval`, idle-deferred via `requestIdleCallback` (1s `setTimeout` fallback). Paused while tab is hidden (`document.visibilityState === 'hidden'`). Catches mutations that `MutationObserver` misses on detached subtrees.
+- **Periodic rescan (v0.2.0)** — `startPeriodicRescan` runs every 5s via `setInterval`, idle-deferred via `requestIdleCallback` (1s `setTimeout` fallback). Paused while tab is hidden (`document.visibilityState === 'hidden'`). Catches mutations that `MutationObserver` misses on detached subtrees.
+- **Synchronous capture guard (v0.6.2)** — `content.js` installs its reversible capture interceptors before awaiting storage. This preempts early page capture listeners and inline `oncontextmenu` handlers; an OFF resolution aborts the guard through `disableUnlocker()`.
 - **Editable elements are preserved** — `isEditableElement()` skips `input/textarea/select/[contenteditable]` so user typing/right-click-paste in form fields still works as native (ISOLATED capture-phase interceptor only).
 - **Shared module (v0.3.0)** — `shared.js` is loaded by `content.js` (via manifest content_scripts[0]), `popup.js` (via popup.html script tag), and `background.js` (via `importScripts`). All three contexts see the same `RIGHT_CLICK_ON_WEB_SHARED` global. This avoids drift in `resolveDomainKey` / `getHostname` / `isDomainEnabled` semantics.
 - **Resolution priority (v0.3.0-v0.4.0)** — `session > domain > global`. chrome.storage.session (transient) > merged sync/local domainSettings[hostname] (per-domain entry, with parent-label fallback) > merged sync/local enabled (global). Sync normally wins over local, except a local quota-fallback marker preserves the latest local user choice until a sync write succeeds. Popup and content script MUST agree.

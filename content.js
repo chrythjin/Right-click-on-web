@@ -50,7 +50,19 @@ const RIGHT_CLICK_ON_WEB = {
   // Periodic re-scan interval (ms). Catches anything MutationObserver
   // missed, e.g. attributeFilter-blind mutations on detached subtrees
   // that get re-attached. Paused while the tab is hidden.
-  rescanIntervalMs: 2000
+  // Raised from 2000ms in v0.6.2 — MutationObserver already covers
+  // ~all observed mutations within a tick, so 5s is enough as a
+  // detached-subtree safety net without burning main-thread cycles.
+  rescanIntervalMs: 5000,
+  // Cross-world stats channel. Content scripts run in an isolated
+  // world, so window.__rightClickOnWebStats is invisible to page
+  // scripts. We mirror the stats JSON into a DOM element under
+  // documentElement — DOM nodes are shared across worlds, so the
+  // manual test page (and any future debugging surface) can read
+  // it via document.getElementById(STATS_DOM_ID).textContent.
+  // The element is a <script type="application/json"> to avoid
+  // any chance of execution or visual rendering.
+  statsDomId: '__rightClickOnWebStats'
 };
 
 let enabled = true;
@@ -62,6 +74,7 @@ let shadowObserverMap = new Map();
 let knownShadowRoots = new Set();
 let rescanTimer = null;
 let stats = createStats();
+let statsSyncQueued = false;
 
 function createStats() {
   const result = {
@@ -88,12 +101,68 @@ function createStats() {
 function resetStats() {
   stats = createStats();
   window.__rightClickOnWebStats = stats;
+  syncStatsToDom();
+}
+
+// Create the cross-world stats element if it doesn't exist yet.
+// documentElement is available at document_start; head is preferred when
+// Chrome has already created it. Subsequent calls reuse the same element.
+function ensureStatsDomElement() {
+  let element = document.getElementById(RIGHT_CLICK_ON_WEB.statsDomId);
+  if (element) {
+    return element;
+  }
+  try {
+    element = document.createElement('script');
+    element.type = 'application/json';
+    element.id = RIGHT_CLICK_ON_WEB.statsDomId;
+    // Marker so other observers can distinguish from arbitrary
+    // <script type="application/json"> elements the page may add.
+    element.setAttribute(RIGHT_CLICK_ON_WEB.markerAttribute, 'true');
+    (document.head || document.documentElement).appendChild(element);
+  } catch (_) {
+    // document.head/document.documentElement both unavailable —
+    // nothing we can do; window.__rightClickOnWebStats remains
+    // the fallback for DevTools inspection.
+    return null;
+  }
+  return element;
+}
+
+// Mirror the current stats object into the cross-world DOM element.
+// Called from key checkpoints and batched counter updates so the latest
+// snapshot is available without a timer.
+// The stringify cost for a ~10-counter object is negligible.
+function syncStatsToDom() {
+  const element = ensureStatsDomElement();
+  if (!element) {
+    return;
+  }
+  try {
+    element.textContent = JSON.stringify(stats);
+  } catch (_) {
+    // Circular references or quota — leave the previous snapshot in
+    // place rather than clear it, so the page sees stale-but-real
+    // data instead of an empty string.
+  }
+}
+
+function scheduleStatsSync() {
+  if (statsSyncQueued) {
+    return;
+  }
+  statsSyncQueued = true;
+  queueMicrotask(() => {
+    statsSyncQueued = false;
+    syncStatsToDom();
+  });
 }
 
 function bumpAttributeRemoval(attribute) {
   const counter = stats.attributeRemovals[attribute];
   if (typeof counter === 'number') {
     stats.attributeRemovals[attribute] = counter + 1;
+    scheduleStatsSync();
   }
 }
 
@@ -101,6 +170,7 @@ function bumpEventInterception(eventName) {
   const counter = stats.eventInterceptions[eventName];
   if (typeof counter === 'number') {
     stats.eventInterceptions[eventName] = counter + 1;
+    scheduleStatsSync();
   }
 }
 
@@ -231,6 +301,15 @@ function clearLockedIdlAttribute(element, attribute) {
     return;
   }
   if (!descriptor) {
+    // Normal inline handlers usually live behind a prototype accessor,
+    // so there is no own descriptor. Removing the HTML attribute does
+    // not reliably clear an already-compiled handler in every Chromium
+    // path; explicitly drive the IDL setter as well.
+    try {
+      element[attribute] = null;
+    } catch (_) {
+      // Read-only prototype accessor.
+    }
     return;
   }
   if (descriptor.configurable) {
@@ -318,6 +397,7 @@ function removeBlockingAttributes(root = document) {
     }
     if (neutralizeBlockOverlay(element)) {
       stats.overlaysNeutralized += 1;
+      scheduleStatsSync();
     }
   }
 
@@ -331,6 +411,7 @@ function removeBlockingAttributes(root = document) {
       continue;
     }
     stats.shadowRootsScanned += 1;
+    scheduleStatsSync();
     const observerInstance = attachMutationObserver(shadow);
     if (observerInstance) {
       shadowObserverMap.set(shadow, observerInstance);
@@ -411,6 +492,10 @@ function observeBlockingChanges() {
 }
 
 function addEventInterceptors() {
+  if (eventController) {
+    return;
+  }
+
   eventController = new AbortController();
 
   for (const eventName of RIGHT_CLICK_ON_WEB.blockedEvents) {
@@ -431,6 +516,7 @@ function scheduleIdle(callback) {
 
 function runPeriodicRescan() {
   stats.periodicRescans += 1;
+  scheduleStatsSync();
   scheduleIdle(() => removeBlockingAttributes());
 }
 
@@ -683,6 +769,10 @@ function resolveAndApply() {
           window.__rightClickOnWebStats.matchedDomain = result.matchedKey;
           window.__rightClickOnWebStats.mode = result.mode || SHARED.DEFAULT_MODE;
         }
+        // Mirror the updated snapshot across worlds so the manual
+        // QA panel (page context) sees the latest decision without
+        // needing to scrape window.* from an isolated context.
+        syncStatsToDom();
       } catch (_) {
         // Stats object may not exist yet — safe to ignore.
       }
@@ -700,11 +790,16 @@ function resolveAndApply() {
   return resolvePromise;
 }
 
-// Initial resolve. We do NOT run a synchronous inline-attribute scrub
-// here: the MAIN-world addEventListener patch (content-main.js) runs
-// before any page script can register preventDefault listeners, so
-// the worst-case race is brief inline-attribute blocking that gets
-// scrubbed as soon as the async resolve completes (typically <50ms).
+// Install the reversible capture interceptors synchronously at
+// document_start. Storage resolution is asynchronous and may be delayed
+// or temporarily unavailable; without this guard, inline handlers such as
+// <body oncontextmenu="return false"> remain active until resolution ends.
+// An OFF result aborts these listeners through disableUnlocker().
+addEventInterceptors();
+
+// Resolve the persistent/session settings and mount the DOM/CSS layers.
+// When every storage area is temporarily unavailable, the interceptors
+// stay active in accordance with the extension's default-enabled contract.
 resolveAndApply();
 
 // Storage listener — handles every layer that could flip the
