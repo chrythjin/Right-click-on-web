@@ -1,19 +1,19 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-12 (v0.6.3 normal-input compatibility)
-**Version:** 0.6.3 (manifest.json)
+**Generated:** 2026-08-12 (v0.8.0 local WASM OCR & screen capture)
+**Version:** 0.8.0 (manifest.json)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
 ## OVERVIEW
 
-Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. **v0.6.2 installs reversible ISOLATED-world capture interceptors synchronously at `document_start`**, closing the storage-resolution race exploited by early page capture handlers. **v0.6.3 limits mouse interception to the secondary button and preserves normal left/middle-click and touch input chains.** No npm, no bundler — loaded directly as unpacked extension.
+Chrome MV3 extension that unblocks right-click, text selection, copy/drag on restrictive websites. **v0.2.0 introduced a dual-script architecture**: an ISOLATED-world content script for DOM work and a MAIN-world prototype patcher that runs at `document_start` to neutralize page-side blocking listeners and closed Shadow DOMs before any page script can register them. **v0.3.0-alpha adds per-domain control and session-mode activation** via a shared `shared.js` helper module consumed by all three contexts (popup, content script, service worker). **v0.6.0 modernized the extension for current Chrome MV3 trends** with a browser-action context menu, side panel, automatic color scheme, and Firefox capability notice. **v0.6.1 hardens the bypass engine** with MAIN-first injection, related opaque-frame coverage, Firefox background compatibility, removable MAIN-world sentinels, content-script session storage access, and Ultimate CSS inside open Shadow Roots. **v0.6.2 installs reversible ISOLATED-world capture interceptors synchronously at `document_start`**, closing the storage-resolution race exploited by early page capture handlers. **v0.6.3 limits mouse interception to the secondary button and preserves normal left/middle-click and touch input chains.** **v0.7.0 reinforces copy reliability**: restores `::selection`/`::-moz-selection` visibility, neutralizes `cursor: default` selection disguise & `@media print` hide tricks, intercepts `keydown` copy shortcuts (`Ctrl+C`, `Ctrl+A`, `Ctrl+X`, `Ctrl+Insert`) on non-editable targets, and clarifies UI mode wording ("블록 지정 활성화 (CSS)"). **v0.8.0 introduces 100% offline local WASM OCR text extraction**: interactive screen area crop overlay (`crop-overlay.js/css`), offscreen DOM document hosting Tesseract.js (`offscreen.html/js`), local Korean/English language models (`langs/`), and `Alt+Shift+S` shortcut trigger. No npm, no bundler — loaded directly as unpacked extension.
 
 ## STRUCTURE
 
 ```
 ./
-├── manifest.json          # MV3 config — content scripts + Chrome/Firefox options/side panel + browser action context menu
+├── manifest.json          # MV3 config — content scripts + Chrome/Firefox options/side panel + OCR offscreen/commands
 ├── shared.js              # v0.5.0: shared helpers — domain/session/sync/mode,
 │                          #   resolveDomainKey, getHostname, isDomainEnabled,
 │                          #   storageGet/Set Promise wrappers + fallback markers. Loaded by content.js,
@@ -21,35 +21,36 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 ├── content.js             # ISOLATED world: DOM cleanup, attribute removal, capture-phase
 │                          #   event interceptors, MutationObserver, periodic rescan,
 │                          #   shadow-root recursion, stats (`window.__rightClickOnWebStats`)
-│                          #   + v0.5.0 Lite/Ultimate CSS mode gating
 ├── content-main.js        # MAIN world (new in v0.2.0): prototype patches for
 │                          #   EventTarget.prototype.addEventListener (sentinel no-op)
 │                          #   and Element.prototype.attachShadow (closed → open)
-├── background.js          # Service worker — initializes default storage on install
-│                          #   + startup; v0.3.0-v0.6.0 storage migrations; v0.6.0
-│                          #   context menus, side panel activation, sync fallback rebuild
+├── crop-overlay.js/css    # v0.8.0: Screen area crop overlay for interactive OCR selection
+├── offscreen.html/js      # v0.8.0: Offscreen document running offline Tesseract.js WASM engine
+├── lib/                   # v0.8.0: Tesseract.js core, worker, and SIMD/LSTM WASM binaries
+├── langs/                 # v0.8.0: Korean (kor) and English (eng) offline traineddata
+├── background.js          # Service worker — storage defaults/migrations, context menus,
+│                          #   side panel, commands, and OCR bridge (captureVisibleTab -> offscreen)
 ├── popup.html/css/js      # Toggle UI (Korean, 340px, motorsport red/black/gold)
 │                          #   + v0.5.0 domain/session/mode/sync-usage controls
-│                          #   + v0.6.0 Firefox notice + side panel entry, dark mode
+│                          #   + v0.8.0 OCR trigger button + shortcut hint
 ├── options.html/css/js    # Full settings dashboard — stored-domain ON/OFF/mode/delete management
-│                          #   + v0.6.0 side panel hint, dark mode
 ├── popup-preview.html     # Standalone ASCII popup preview (NOT loaded by extension)
 ├── icons/                 # icon128.png, icon512.png (referenced from manifest.json `icons` key)
 ├── assets/screenshots/    # test-page.png — 1280×800 store submission screenshot
-├── tests/manual/          # blocked-page.html — manual QA harness with 11 scenarios
-│                          #   (8 v0.2.0 + 2 v0.3.0 + Lite/Ultimate); screenshot.png — visual reference
+├── tests/manual/          # blocked-page.html — manual QA harness with 15 scenarios
+│                          #   (8 v0.2.0 + 2 v0.3.0 + Lite/Ultimate + v0.7.0/v0.8.0); screenshot.png
 └── docs/                  # store-submission-plan.md, chrome-web-store-requirements.md,
                            #   deployment-manual.md, store-listing.md,
-                           #   benchmarking-roadmap.md (single master plan: competitor
-                           #   analysis + 4-phase roadmap + v0.3.0 architecture),
-                           #   privacy-policy.html, .nojekyll, sessions/
+                           #   benchmarking-roadmap.md, privacy-policy.html, .nojekyll, sessions/
 ```
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Dual-script orchestration (load order, world split) | `manifest.json` → `content_scripts[]` | Both run at `document_start`, `all_frames: true`; MAIN `content-main.js` is entry 0 and ISOLATED `["shared.js", "content.js"]` is entry 1. |
+| OCR interactive selection & overlay UI | `crop-overlay.js` + `crop-overlay.css` | Injected on top-level frame only (`all_frames: false`); provides drag crosshair, crop-box, tip, loading spinner, and toast notifications |
+| Offline WASM OCR engine & canvas crop | `offscreen.html` + `offscreen.js` | Hosts Tesseract.js in offscreen DOM environment; loads local WASM core (`lib/`) and language data (`langs/`); returns extracted text |
+| Dual-script orchestration (load order, world split) | `manifest.json` → `content_scripts[]` | MAIN `content-main.js` (entry 0, `all_frames: true`), ISOLATED `["shared.js", "content.js"]` (entry 1, `all_frames: true`), and ISOLATED `["crop-overlay.js"]` (entry 2, `all_frames: false`). |
 | Shared helpers (domain matching, hostname parsing, storage Promise wrappers) | `shared.js` | Loaded via the ISOLATED content-script entry (before content.js), popup.html `<script>` tag, and background.js `importScripts`/Firefox `background.scripts`. Single global `RIGHT_CLICK_ON_WEB_SHARED`. |
 | DOM cleanup, attribute removal, capture-phase interceptors, MutationObserver, periodic rescan | `content.js` | ISOLATED world; single global `RIGHT_CLICK_ON_WEB` config object |
 | MAIN-world prototype patches (`addEventListener`, `attachShadow`) | `content-main.js` | Runs FIRST at document_start; sentinel listener preserves AbortSignal spec contract |
@@ -57,73 +58,36 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | Per-domain ON/OFF resolution (v0.3.0) | `content.js` `resolveEnabled()` + `shared.js` `resolveDomainKey()` | Reads merged sync/local domainSettings; walks parent labels until a public-suffix boundary |
 | Session-mode activation (v0.3.0) | `content.js` `resolveEnabled()` + `popup.js` `handleSessionToggle()` | Uses `chrome.storage.session`; transient (cleared on browser shutdown); session key format `session:<hostname>` |
 | Multi-layer priority resolution (v0.3.0) | `content.js` `resolveEnabled()` + race-condition guard `resolveAndApply()` | session > domain > global; `resolvePromise` coalesces concurrent onChanged fires into one in-flight resolve |
-| Extension ON/OFF + per-domain + session toggle UI | `popup.js` + `popup.html` | Three controls: global toggle, domain-card toggle, session button |
+| Extension ON/OFF + per-domain + session toggle UI | `popup.js` + `popup.html` | Three controls: global toggle, domain-card toggle, session button + OCR capture button |
 | Stored-domain settings dashboard | `options.html` + `options.js` | Global toggle plus all stored domains' ON/OFF, Lite/Ultimate and deletion controls |
 | Default storage init + migration | `background.js` | Initializes defaults, migrates local→sync on update, and normalizes legacy boolean domain entries |
-| Browser action context menu + side panel activation (v0.6.0) | `background.js` + `manifest.json` | `chrome.contextMenus` entries on the action plus `chrome.sidePanel.open` from popup/menu with options-page fallback |
-| Manifest UI/browser metadata | `manifest.json` | `options_ui` opens the shared dashboard; `side_panel.default_path` mirrors it; `contextMenus` + `sidePanel` permissions; Gecko ID declares Firefox packaging metadata; `storage` + `activeTab` + `<all_urls>` remain required |
+| Background OCR bridge + Context menu + side panel (v0.6.0-v0.8.0) | `background.js` | `captureVisibleTab` + offscreen worker delegation; `chrome.contextMenus` + `chrome.commands` shortcut (`Alt+Shift+S`) |
+| Manifest UI/browser metadata | `manifest.json` | `options_ui` opens shared dashboard; `side_panel.default_path` mirrors it; `offscreen` + `commands` + `content_security_policy` declaring `wasm-unsafe-eval` |
 | Runtime stats for QA | `window.__rightClickOnWebStats` (set in `content.js`) | Counters for attribute removals, event interceptions, overlays, shadow roots, periodic rescans + v0.3.0 `resolveSource` / `matchedDomain` diagnostics + v0.5.0 `mode` (lite/ultimate) |
-| Manual QA harness (11 scenarios incl. v0.5.0 mode) | `tests/manual/blocked-page.html` | Korean UI; section 9 = domain, section 10 = session, section 11 = Lite/Ultimate |
+| Manual QA harness (15 scenarios) | `tests/manual/blocked-page.html` | Korean UI; section 13 = `::selection`, section 14 = `Ctrl+C`, section 15 = Canvas/Image Local OCR |
 | Popup UI preview (browser-open) | `popup-preview.html` | standalone ASCII-art, NOT loaded by extension; reflects sync usage and Lite/Ultimate UI |
 | Store submission | `docs/store-submission-plan.md` | step-by-step guide |
 | Chrome requirements | `docs/chrome-web-store-requirements.md` | asset specs, policy |
 | Deployment manual | `docs/deployment-manual.md` | end-to-end release/deploy procedure |
-| Benchmarking analysis & feature roadmap (single source of truth) | `docs/benchmarking-roadmap.md` | Competitor (Ultimate Enable Right Click) gap analysis + 4-phase plan (v0.3.0/v0.4.0/v0.5.0) + v0.3.0 detailed architecture (PSL/subdomain/race-condition/shared module) + 10-scenario QA + execution checklist. v0.3.0-architecture-plan.md was merged into this file on 2026-08-08. |
+| Benchmarking analysis & feature roadmap (single source of truth) | `docs/benchmarking-roadmap.md` | Competitor (Ultimate Enable Right Click + Text From PRO) gap analysis + 4-phase plan + architecture |
 | Store listing copy (CWS registration form fields) | `docs/store-listing.md` | title/description/category/language/region for submission form |
 | Privacy policy page | `docs/privacy-policy.html` | hosted via GitHub Pages from `docs/`; referenced from store submission; v0.4.0 updated to disclose chrome.storage.sync (Chrome Web Store policy) |
 | GitHub Pages publishing source | `docs/.nojekyll` | disables Jekyll so `privacy-policy.html` is served verbatim |
 | Store submission screenshot (1280×800) | `assets/screenshots/test-page.png` | primary visual asset for Chrome Web Store listing |
-| Manual QA screenshot | `tests/manual/screenshot.png` | visual reference for the 8-scenario harness (v0.2.0; v0.3.0 harness needs re-screenshot) |
+| Manual QA screenshot | `tests/manual/screenshot.png` | visual reference for the harness |
 | Past session notes | `docs/sessions/` | timestamped history (Ymd_HMS_<task>.md) |
-
-## CODE MAP
-
-| Symbol | Kind | Location | Role |
-|--------|------|----------|------|
-| `RIGHT_CLICK_ON_WEB_SHARED` | const export | `shared.js` (IIFE) | PUBLIC_SUFFIX_BLOCKLIST, MAX_DOMAIN_MATCH_DEPTH, STORAGE_DEFAULTS, SESSION_KEY_PREFIX, sessionKeyFor, getHostname, resolveDomainKey, isDomainEnabled, storageGet/Set/Remove, isSessionStorageAvailable |
-| `PUBLIC_SUFFIX_BLOCKLIST` | const Set | `shared.js` | ~40 multi-part TLDs (co.uk, co.kr, com.au, etc.); blocks accidental blanket-match in resolveDomainKey |
-| `resolveDomainKey(hostname, settings)` | fn | `shared.js` | Walks parent-domain labels up to MAX_DOMAIN_MATCH_DEPTH=5; returns matched key or null; stops at public-suffix entries |
-| `getHostname(href)` | fn | `shared.js` | URL parsing; returns '' for non-http(s) or invalid; used by both popup and content script to gate domain controls |
-| `isDomainEnabled(globalEnabled, settings, hostname)` | fn | `shared.js` | Boolean decision: global OFF wins everywhere; otherwise domain entry wins over global |
-| `storageGet/Set/Remove(area, ...)` | fn | `shared.js` | Promise wrappers around chrome.storage callback API; surfaces chrome.runtime.lastError as rejection |
-| `isSessionStorageAvailable()` | fn | `shared.js` | Defensive runtime check for chrome.storage.session (Chrome 102+); content-script access is enabled by the background worker on install/startup |
-| `RIGHT_CLICK_ON_WEB` | const config | `content.js` | blockedAttributes (6), blockedEvents (10), rescanIntervalMs (5000), styleId, markerAttribute |
-| `createStats()` | fn | `content.js` | Initializes counters: attributeRemovals, eventInterceptions, overlaysNeutralized, shadowRootsScanned, periodicRescans + v0.3.0 resolveSource, matchedDomain |
-| `enableUnlocker()` / `disableUnlocker()` | fn | `content.js` | Idempotent mount/unmount of CSS + listeners + observer + rescan timer |
-| `removeBlockingAttributes(root)` | fn | `content.js` | Recursive: walks root, removes blocked attrs, unlocks IDL descriptors, neutralizes overlays, recurses into open shadow roots |
-| `clearLockedIdlAttribute(element, attr)` | fn | `content.js` | Bypasses `Object.defineProperty(el, 'oncontextmenu', {configurable:false})` by redefining descriptor + nulling value |
-| `neutralizeBlockOverlay(element)` | fn | `content.js` | Sets `pointer-events:none!important` on empty absolute/fixed overlays |
-| `addEventInterceptors()` | fn | `content.js` | Registers capture-phase `stopImmediatePropagation` listeners via single `AbortController` signal |
-| `startPeriodicRescan()` | fn | `content.js` | 5s `setInterval` → idle-deferred full-DOM rescan; pauses while `visibilityState === 'hidden'` |
-| `setEnabled(next, mode)` | fn | `content.js` | Switches ON/OFF and immediately applies Lite/Ultimate CSS changes |
-| `resolveEnabled()` | async fn | `content.js` | Reads session > merged domainSettings > global enabled; returns `{enabled, source, hostname, matchedKey, mode}` |
-| `resolveAndApply()` | fn | `content.js` (v0.3.0) | Race-condition guard; coalesces concurrent onChanged fires into one in-flight promise via `resolvePromise` singleton |
-| `mainWorldPatch()` (IIFE) | fn | `content-main.js:42` | Idempotent sentinel; patches `EventTarget.prototype.addEventListener` + `Element.prototype.attachShadow` |
-| `BLOCKED_EVENT_NAMES` | const | `content-main.js:52` | `['contextmenu','selectstart','dragstart']` — subset of `content.js` `blockedEvents`. copy/cut/paste moved out in v0.6.2 to restore web-editor compatibility (Google Docs, Notion, etc.); the ISOLATED capture-phase interceptor already stops blocking-only pages via `stopImmediatePropagation`, and the `isEditableElement` exemption lets real editors' custom paste handlers run. |
-| `patchedAddEventListener(type, listener, options)` | fn | `content-main.js:72` | Mirrors native signature (string + String wrapper); replaces blocked types with sentinel no-op listener |
-| `patchedAttachShadow(init)` | fn | `content-main.js:114` | `Object.create(init)` + overrides `mode:'closed'` → `mode:'open'` |
-| `DEFAULT_SETTINGS` / `STORAGE_DEFAULTS` | const | `background.js` / `shared.js` | `{ enabled: true, domainSettings: {} }` — must stay tri-party-coordinated across popup/content/background |
-| `getCurrentHostname()` | async fn | `popup.js` (v0.3.0) | `chrome.tabs.query({active: true, currentWindow: true})` + SHARED.getHostname; requires `activeTab` permission |
-| `loadState()` / `render()` | fn | `popup.js` (v0.3.0) | Pulls all storage layers + current hostname; renders global/domain/session UI |
-| `handleGlobalToggle()` / `handleDomainToggle()` / `handleSessionToggle()` | fn | `popup.js` (v0.3.0) | Write handlers; each touches a single storage layer; re-render is driven by `chrome.storage.onChanged` listener |
 
 ## COMMANDS
 
 ```powershell
 # Load unpacked: chrome://extensions → Developer mode → Load unpacked → select this folder
 
-# Package for store submission (must include shared.js + BOTH content scripts):
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web.zip" -Force
+# Package for store submission (v0.8.0 with local WASM OCR engine & language models):
+Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.8.0.zip" -Force
 # Exclude from ZIP: .git, .serena, .omo, history, docs, tests, popup-preview.html, README.md, assets/, .opencode/
-
-# GitHub Pages source is docs/ — push to main to publish privacy-policy.html at:
-# https://<user>.github.io/<repo>/privacy-policy.html
 ```
 
 ## ANTI-PATTERNS (THIS PROJECT)
-
-- **`host_permissions: ["<all_urls>"]`** — REQUIRED, not a mistake (content script needs it)
-- **`activeTab` permission (v0.3.0)** — REQUIRED for popup to read current tab's hostname via `chrome.tabs.query`. Do not remove without also removing the domain-card UI.
 - **`contextMenus` + `sidePanel` permissions (v0.6.0)** — REQUIRED for the browser action context menu and the side-panel shortcut. They are no-ops on browsers without the matching API; the popup falls back to `chrome.runtime.openOptionsPage()`.
 - **`world: "MAIN"` content script is NOT removable by popup toggle** — prototype patches apply at `document_start` and cannot be undone mid-page-life. Full OFF requires extension disable + tab reload (or refresh).
 - **OFF mode on `content.js`** — removes injected CSS / event listeners / observer / rescan timer but does NOT restore inline blocking attributes removed while ON (by design; never restores page state it didn't observe)

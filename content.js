@@ -218,10 +218,28 @@ function injectSelectionStyle(root = document) {
       -moz-user-drag: auto !important;
       -webkit-touch-callout: default !important;
     }
+    *:not(input):not(textarea)::selection {
+      background-color: #3390ff !important;
+      color: #ffffff !important;
+    }
+    *:not(input):not(textarea)::-moz-selection {
+      background-color: #3390ff !important;
+      color: #ffffff !important;
+    }
+    p, li, span, div, article, section, blockquote,
+    h1, h2, h3, h4, h5, h6, td, th, pre, code, label {
+      cursor: auto !important;
+    }
     img, a {
       -webkit-user-drag: auto !important;
       -moz-user-drag: auto !important;
       user-drag: auto !important;
+    }
+    @media print {
+      body * {
+        display: revert !important;
+        visibility: visible !important;
+      }
     }
   `;
 
@@ -504,6 +522,25 @@ function addEventInterceptors() {
       signal: eventController.signal
     });
   }
+
+  // v0.7.0: Intercept keydown for copy shortcuts (Ctrl+C, Ctrl+A, Ctrl+X, Ctrl+Insert)
+  // Stops page handlers from preventDefault()-ing copy operations on non-editable elements
+  document.addEventListener('keydown', (event) => {
+    if (isEditableElement(event.target)) {
+      return;
+    }
+    const isModifier = event.ctrlKey || event.metaKey;
+    const keyCopy = ['c', 'a', 'x'].includes(event.key.toLowerCase());
+    const keyInsertCopy = event.key === 'Insert' && event.ctrlKey;
+    if (isModifier && (keyCopy || keyInsertCopy)) {
+      bumpEventInterception('keydown');
+      event.stopImmediatePropagation();
+    }
+  }, {
+    capture: true,
+    passive: false,
+    signal: eventController.signal
+  });
 }
 
 function scheduleIdle(callback) {

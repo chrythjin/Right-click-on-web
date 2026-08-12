@@ -45,7 +45,7 @@
             Ultimate
           </button>
         </div>
-        <p id="modeHint" class="mode-hint">Lite는 우클릭·복사 차단만 완화합니다 (CSS 주입 없음).</p>
+        <p id="modeHint" class="mode-hint">Ultimate: 블록 지정 활성화 (CSS 드래그 강제 허용). Lite: JS 차단만 완화.</p>
       </section>
 
       <button id="sessionButton" class="session-button" type="button" disabled>
@@ -55,6 +55,12 @@
       <p id="sessionNotice" class="session-notice is-hidden" role="status" aria-live="polite"></p>
 
       <p id="syncUsage" class="sync-usage is-hidden"></p>
+
+      <button id="ocrButton" class="ocr-button" type="button">
+        📷 화면 영역 텍스트 추출 (OCR)
+      </button>
+
+      <p class="ocr-shortcut-hint">단축키: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></p>
 
       <button id="openOptionsButton" class="options-link" type="button">
         전체 사이트 설정 관리
@@ -66,11 +72,12 @@
 
       <ul class="feature-list" aria-label="활성화되는 기능">
         <li>우클릭 메뉴 복원</li>
-        <li>텍스트 선택 허용</li>
-        <li>복사/잘라내기 차단 완화</li>
+        <li>텍스트 선택 및 CSS 드래그 허용</li>
+        <li>복사/단축키(Ctrl+C) 차단 완화</li>
+        <li>화면 영역 텍스트 OCR 추출</li>
       </ul>
 
-      <p class="notice">DRM, 이미지·캔버스 텍스트, 강한 iframe 격리에서는 동작하지 않을 수 있습니다. OFF로 전환 후에도 MAIN world 패치는 새로고침 전까지 유지됩니다.</p>
+      <p class="notice">DRM 보호 미디어나 강한 iframe 격리에서는 동작하지 않을 수 있습니다. OCR은 100% 로컬 브라우저에서 안전하게 처리됩니다.</p>
     </main>
     <script src="shared.js"></script>
     <script src="popup.js"></script>

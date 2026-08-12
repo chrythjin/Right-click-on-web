@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.6.3",
-  "description": "Restores common right-click, text selection, copy, and drag interactions on restrictive websites.",
+  "version": "0.8.0",
+  "description": "Restores common right-click, text selection, copy, and drag interactions, and extracts text via local OCR on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
     "512": "icons/icon512.png"
@@ -42,10 +42,35 @@
       "all_frames": true,
       "match_about_blank": true,
       "match_origin_as_fallback": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["crop-overlay.js"],
+      "css": ["crop-overlay.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "trigger-ocr": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "화면 영역 텍스트 추출 (OCR 캡처)"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/*", "langs/*"],
+      "matches": ["<all_urls>"]
     }
   ],
   "minimum_chrome_version": "121",
-  "permissions": ["storage", "activeTab", "contextMenus", "sidePanel"],
+  "permissions": ["storage", "activeTab", "contextMenus", "sidePanel", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "browser_specific_settings": {
     "gecko": {

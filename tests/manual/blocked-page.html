@@ -234,6 +234,36 @@
       <p id="interactionStatus">상태: 확인 전</p>
     </section>
 
+    <section>
+      <h2>13. ::selection 투명화 속임수 무력화 (v0.7.0)</h2>
+      <p class="hint">아래 영역은 <code>::selection { background: transparent; color: inherit; }</code>으로 드래그해도 선택된 것처럼 보이지 않도록 속입니다. Ultimate 모드 ON 시 파란색(#3390ff) 하이라이트가 표시되어야 합니다.</p>
+      <style>
+        #section13Target::selection { background: transparent !important; color: inherit !important; }
+        #section13Target::-moz-selection { background: transparent !important; color: inherit !important; }
+      </style>
+      <div class="dropZone" id="section13Target">
+        이 텍스트를 드래그해 보세요. 확장 OFF 시 선택 색상이 보이지 않고, 확장 Ultimate ON 시 파란색으로 표시되어야 합니다.
+      </div>
+    </section>
+
+    <section>
+      <h2>14. Ctrl+C 단축키 복사 방어 (v0.7.0)</h2>
+      <p class="hint">아래 버튼 클릭 후 텍스트를 선택하고 Ctrl+C를 눌러보세요. 확장 ON 시 페이지의 keydown 핸들러가 복사를 막지 못하여 텍스트가 정상 복사됩니다.</p>
+      <button id="addKeydownBlocker" type="button">Ctrl+C keydown 차단 등록</button>
+      <p id="keydownStatus">상태: 미등록</p>
+      <div class="dropZone" id="section14Target">
+        이 텍스트를 선택하고 Ctrl+C를 눌러서 복사해 보세요. 다른 곳에 붙여넣어 내용이 복사되었는지 확인하세요.
+      </div>
+    </section>
+
+    <section>
+      <h2>15. 화면 영역 로컬 OCR 텍스트 추출 (v0.8.0)</h2>
+      <p class="hint">아래 Canvas는 DOM 텍스트 노드가 없는 순수 그래픽 렌더링 영역입니다. 확장 팝업의 <code>📷 화면 영역 텍스트 추출 (OCR)</code> 버튼을 클릭하거나 단축키 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>를 눌러 아래 Canvas 영역을 드래그하면 100% 로컬 WASM OCR로 텍스트를 인식하여 클립보드에 복사합니다.</p>
+      <canvas id="ocrCanvasTarget" width="640" height="120" style="border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: #18181c; max-width: 100%; display: block; margin: 10px 0;"></canvas>
+      <p class="hint">클립보드에 복사된 텍스트를 아래 입력창에 붙여넣어 확인해 보세요:</p>
+      <input type="text" placeholder="여기에 Ctrl+V 로 붙여넣기" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; font-size: 14px; box-sizing: border-box;">
+    </section>
+
     <p id="dynamicTarget"></p>
     <p>
       <button id="addBlocker" type="button">동적 차단 요소 추가</button>
@@ -410,6 +440,32 @@
           ? '상태: 성공 (mousedown → mouseup → click 전달됨)'
           : '상태: 실패 (확장이 정상 입력 이벤트를 차단함)';
       });
+
+      // Section 14 — keydown Ctrl+C 차단 등록 검증
+      document.getElementById('addKeydownBlocker').addEventListener('click', () => {
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+          }
+        });
+        document.getElementById('keydownStatus').textContent = '상태: Ctrl+C preventDefault 차단 등록됨';
+      });
+
+      // Section 15 — OCR 테스트용 그래픽 Canvas 텍스트 렌더링
+      const ocrCanvas = document.getElementById('ocrCanvasTarget');
+      if (ocrCanvas && ocrCanvas.getContext) {
+        const ctx = ocrCanvas.getContext('2d');
+        ctx.fillStyle = '#1c1d22';
+        ctx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
+        
+        ctx.fillStyle = '#c8a45d';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.fillText('Right-click on Web v0.8.0 Local OCR Test', 24, 45);
+
+        ctx.fillStyle = '#f0f0f0';
+        ctx.font = '16px sans-serif';
+        ctx.fillText('이 텍스트는 Canvas 그래픽 이미지입니다. 드래그하여 OCR을 시도하세요.', 24, 85);
+      }
 
       document.getElementById('showStats').addEventListener('click', () => {
         const panel = document.getElementById('counterPanel');

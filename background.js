@@ -30,9 +30,65 @@ const DEFAULT_SETTINGS = SHARED.STORAGE_DEFAULTS;
 
 const CONTEXT_MENU_IDS = Object.freeze({
   GLOBAL_TOGGLE: 'rcow-global-toggle',
+  TRIGGER_OCR: 'rcow-trigger-ocr',
   OPEN_PANEL: 'rcow-open-panel',
   OPEN_OPTIONS: 'rcow-open-options'
 });
+
+let creatingOffscreenPromise = null;
+
+async function ensureOffscreenDocument() {
+  if (typeof chrome.offscreen === 'undefined') {
+    throw new Error('이 브라우저는 chrome.offscreen API를 지원하지 않습니다.');
+  }
+
+  // Check if offscreen document already exists
+  if (typeof chrome.offscreen.hasDocument === 'function') {
+    const hasDoc = await chrome.offscreen.hasDocument();
+    if (hasDoc) {
+      return;
+    }
+  } else if (typeof chrome.runtime.getContexts === 'function') {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT']
+    });
+    if (contexts.length > 0) {
+      return;
+    }
+  }
+
+  if (creatingOffscreenPromise) {
+    await creatingOffscreenPromise;
+    return;
+  }
+
+  creatingOffscreenPromise = chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['WORKERS'],
+    justification: 'Tesseract.js WASM local OCR processing'
+  }).catch((err) => {
+    // If document already exists, ignore
+    if (!err.message?.includes('Only a single offscreen document')) {
+      throw err;
+    }
+  }).finally(() => {
+    creatingOffscreenPromise = null;
+  });
+
+  await creatingOffscreenPromise;
+}
+
+async function triggerCropOnActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) {
+      return;
+    }
+    await chrome.tabs.sendMessage(tab.id, { type: 'rcow:startCrop' });
+  } catch (err) {
+    console.warn('Failed to send startCrop message to active tab:', err);
+  }
+}
 
 async function exposeSessionStorageToContentScripts() {
   if (typeof chrome.storage.session?.setAccessLevel !== 'function') {
@@ -191,6 +247,13 @@ async function registerContextMenus() {
     title: enabled ? '전역 차단 완화 끄기' : '전역 차단 완화 켜기',
     contexts: ['action']
   });
+  if (typeof chrome.offscreen !== 'undefined') {
+    chrome.contextMenus.create({
+      id: CONTEXT_MENU_IDS.TRIGGER_OCR,
+      title: '📷 화면 영역 텍스트 추출 (OCR)',
+      contexts: ['action']
+    });
+  }
   chrome.contextMenus.create({
     id: CONTEXT_MENU_IDS.OPEN_PANEL,
     title: '사이트 패널에서 열기',
@@ -215,6 +278,10 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     registerContextMenus();
     return;
   }
+  if (info.menuItemId === CONTEXT_MENU_IDS.TRIGGER_OCR) {
+    await triggerCropOnActiveTab();
+    return;
+  }
   if (info.menuItemId === CONTEXT_MENU_IDS.OPEN_PANEL) {
     if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
       const window = await currentWindow();
@@ -230,6 +297,66 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   }
   if (info.menuItemId === CONTEXT_MENU_IDS.OPEN_OPTIONS) {
     openOptionsFallback();
+  }
+});
+
+// Shortcut command handler (e.g. Alt+Shift+S)
+if (chrome.commands && typeof chrome.commands.onCommand?.addListener === 'function') {
+  chrome.commands.onCommand.addListener(async (command) => {
+    if (command === 'trigger-ocr') {
+      await triggerCropOnActiveTab();
+    }
+  });
+}
+
+// Background OCR message bridge
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message !== 'object') {
+    return;
+  }
+
+  if (message.type === 'rcow:startCropOnActiveTab') {
+    void triggerCropOnActiveTab();
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message.type === 'rcow:captureAndOcr') {
+    (async () => {
+      try {
+        const windowId = sender?.tab?.windowId;
+        if (typeof windowId !== 'number') {
+          throw new Error('요청 탭의 Window ID를 확인할 수 없습니다.');
+        }
+
+        // 1. Capture current tab viewport as PNG
+        const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+        if (!dataUrl) {
+          throw new Error('화면 캡처 데이터를 가져올 수 없습니다.');
+        }
+
+        // 2. Ensure offscreen document is ready
+        await ensureOffscreenDocument();
+
+        // 3. Delegate to offscreen document for local OCR
+        const ocrResponse = await chrome.runtime.sendMessage({
+          type: 'rcow:runOcr',
+          dataUrl,
+          cropRect: message.cropRect,
+          devicePixelRatio: message.devicePixelRatio
+        });
+
+        if (!ocrResponse || !ocrResponse.ok) {
+          throw new Error(ocrResponse?.error || '오프스크린 OCR 처리 오류');
+        }
+
+        sendResponse({ ok: true, text: ocrResponse.text });
+      } catch (err) {
+        console.error('OCR processing failed in background:', err);
+        sendResponse({ ok: false, error: err.message || String(err) });
+      }
+    })();
+    return true; // Keep message channel open for async response
   }
 });
 

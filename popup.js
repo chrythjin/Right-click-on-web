@@ -51,6 +51,7 @@ const elements = {
   sessionButton: document.getElementById('sessionButton'),
   sessionNotice: document.getElementById('sessionNotice'),
   syncUsage: document.getElementById('syncUsage'),
+  ocrButton: document.getElementById('ocrButton'),
   openOptionsButton: document.getElementById('openOptionsButton'),
   openSidePanelButton: document.getElementById('openSidePanelButton')
 };
@@ -224,11 +225,11 @@ function render() {
   if (state.sessionActive) {
     elements.modeHint.textContent = '세션 활성 중 — 잠시 후 새로고침되며 Ultimate로 동작합니다.';
   } else if (!hasDomainEntry) {
-    elements.modeHint.textContent = 'Lite는 우클릭·복사 차단만 완화합니다 (CSS 주입 없음). 도메인 ON 후 모드를 선택하면 저장됩니다.';
+    elements.modeHint.textContent = 'Ultimate(기본): 블록 지정 활성화 (CSS 드래그 강제 허용). Lite: JS 차단만 완화. 도메인 ON 후 모드를 선택하세요.';
   } else {
     elements.modeHint.textContent = activeMode === SHARED.MODE_LITE
-      ? 'Lite — 우클릭·복사 차단만 완화 (페이지 CSS 주입 없음)'
-      : 'Ultimate — 우클릭·선택·복사·오버레이 모두 완화 (기본)';
+      ? 'Lite — JS 차단만 완화 (사이트 UI 보존, CSS 주입 없음)'
+      : 'Ultimate — 블록 지정 활성화 (CSS 드래그 강제 허용 + 완전 복사)';
   }
 
   // ---- Session button ----
@@ -282,6 +283,12 @@ function render() {
       elements.syncUsage.textContent = '';
       elements.syncUsage.classList.add('is-hidden');
     }
+  }
+
+  // ---- OCR button visibility (v0.8.0) ----
+  if (elements.ocrButton) {
+    const supportsOffscreen = typeof chrome !== 'undefined' && (typeof chrome.offscreen !== 'undefined' || typeof chrome.runtime?.getContexts === 'function');
+    elements.ocrButton.style.display = supportsOffscreen ? 'flex' : 'none';
   }
 }
 
@@ -396,12 +403,25 @@ async function handleOpenSidePanel() {
   handleOpenOptions();
 }
 
+async function handleTriggerOcr() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'rcow:startCropOnActiveTab' });
+  } catch (err) {
+    console.warn('Failed to send startCropOnActiveTab message:', err);
+  } finally {
+    window.close();
+  }
+}
+
 // ---- Wire up ----
 elements.toggleButton.addEventListener('click', handleGlobalToggle);
 elements.domainToggle.addEventListener('click', handleDomainToggle);
 elements.modeLite.addEventListener('click', () => handleModeSelect(SHARED.MODE_LITE));
 elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MODE_ULTIMATE));
 elements.sessionButton.addEventListener('click', handleSessionToggle);
+if (elements.ocrButton) {
+  elements.ocrButton.addEventListener('click', handleTriggerOcr);
+}
 elements.openOptionsButton.addEventListener('click', handleOpenOptions);
 if (elements.openSidePanelButton) {
   elements.openSidePanelButton.addEventListener('click', handleOpenSidePanel);

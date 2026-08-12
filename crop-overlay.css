@@ -1,0 +1,138 @@
+/* Right-click on Web — Screen Area Crop & OCR Overlay Styles */
+
+:root {
+  --rcow-crop-accent: #e10600;
+  --rcow-crop-gold: #c8a45d;
+  --rcow-crop-bg: rgba(10, 10, 12, 0.55);
+}
+
+.rcow-crop-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483646 !important;
+  cursor: crosshair !important;
+  background-color: var(--rcow-crop-bg) !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+.rcow-crop-box {
+  position: fixed !important;
+  border: 2px dashed var(--rcow-crop-gold) !important;
+  background-color: rgba(225, 6, 0, 0.12) !important;
+  box-shadow: 0 0 0 99999px var(--rcow-crop-bg), 0 4px 20px rgba(0, 0, 0, 0.6) !important;
+  pointer-events: none !important;
+  z-index: 2147483647 !important;
+  box-sizing: border-box !important;
+  border-radius: 2px !important;
+  transition: border-color 0.15s ease;
+}
+
+.rcow-crop-box.is-capturing {
+  border-color: #3390ff !important;
+  background-color: rgba(51, 144, 255, 0.15) !important;
+}
+
+.rcow-crop-tip {
+  position: fixed !important;
+  top: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(18, 18, 20, 0.92) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  color: #f0f0f0 !important;
+  padding: 10px 20px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(200, 164, 93, 0.4) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  letter-spacing: -0.2px !important;
+}
+
+.rcow-crop-tip .rcow-badge {
+  background: var(--rcow-crop-accent) !important;
+  color: #fff !important;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+.rcow-toast-container {
+  position: fixed !important;
+  bottom: 32px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px !important;
+  pointer-events: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.rcow-toast {
+  background: rgba(20, 20, 24, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  color: #ffffff !important;
+  padding: 12px 22px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  animation: rcowFadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  pointer-events: auto !important;
+  max-width: 480px !important;
+  word-break: break-word !important;
+}
+
+.rcow-toast.is-success {
+  border-color: rgba(51, 144, 255, 0.5) !important;
+}
+
+.rcow-toast.is-error {
+  border-color: rgba(225, 6, 0, 0.5) !important;
+}
+
+.rcow-spinner {
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid rgba(255, 255, 255, 0.25) !important;
+  border-top-color: var(--rcow-crop-gold) !important;
+  border-radius: 50% !important;
+  animation: rcowSpin 0.8s linear infinite !important;
+  display: inline-block !important;
+}
+
+@keyframes rcowSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rcowFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
