@@ -5,6 +5,15 @@
 (() => {
   'use strict';
 
+  const OCR_IMAGE_UTILS = globalThis.RIGHT_CLICK_ON_WEB_OCR_IMAGE_UTILS;
+  if (!OCR_IMAGE_UTILS ||
+       typeof OCR_IMAGE_UTILS.calculateCropBounds !== 'function' ||
+        typeof OCR_IMAGE_UTILS.createOcrSuccessResponse !== 'function' ||
+        typeof OCR_IMAGE_UTILS.createPreprocessingPlan !== 'function' ||
+        typeof OCR_IMAGE_UTILS.recognizeWithCandidates !== 'function' ||
+        typeof OCR_IMAGE_UTILS.normalizePreprocessing !== 'function') {
+    throw new Error('OCR 이미지 유틸리티를 불러오지 못했습니다.');
+  }
   let workerPromise = null;
 
   async function initTesseractWorker() {
@@ -44,21 +53,70 @@
       const img = new Image();
       img.onload = () => {
         const canvas = document.getElementById('cropCanvas');
-        const sx = Math.max(0, Math.round(cropRect.x * dpr));
-        const sy = Math.max(0, Math.round(cropRect.y * dpr));
-        const sw = Math.round(cropRect.width * dpr);
-        const sh = Math.round(cropRect.height * dpr);
+        const { sx, sy, sw, sh } = OCR_IMAGE_UTILS.calculateCropBounds(
+          cropRect,
+          dpr,
+          img.naturalWidth,
+          img.naturalHeight
+        );
+
+        if (sw <= 0 || sh <= 0) {
+          reject(new Error('선택한 영역이 화면 캡처 범위를 벗어났습니다.'));
+          return;
+        }
+        OCR_IMAGE_UTILS.assertSafePixelDimensions(sw, sh);
 
         canvas.width = sw;
         canvas.height = sh;
 
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-        resolve(canvas.toDataURL('image/png'));
+        const pixels = sw * sh <= 4000000 ? ctx.getImageData(0, 0, sw, sh).data : null;
+        if (pixels && !OCR_IMAGE_UTILS.hasVisiblePixels(pixels)) {
+          reject(new Error('선택한 OCR 영역에 인식할 이미지가 없습니다.'));
+          return;
+        }
+        resolve({
+          dataUrl: canvas.toDataURL('image/png'),
+          crop: { width: sw, height: sh },
+          pixels
+        });
       };
       img.onerror = (e) => reject(new Error('이미지 캡처 데이터 로드 실패: ' + e));
       img.src = dataUrl;
     });
+  }
+
+  function createCandidateDataUrl(croppedImage, candidate) {
+    if (candidate.profile === 'off') {
+      return croppedImage.dataUrl;
+    }
+    if (!croppedImage.pixels) {
+      throw new Error('선택한 OCR 영역이 전처리 안전 한도를 벗어났습니다.');
+    }
+
+    const { width, height } = croppedImage.crop;
+    const processedCanvas = document.createElement('canvas');
+    processedCanvas.width = width;
+    processedCanvas.height = height;
+    const processedContext = processedCanvas.getContext('2d');
+    const transformedPixels = OCR_IMAGE_UTILS.transformPixels(croppedImage.pixels, candidate);
+    processedContext.putImageData(new ImageData(transformedPixels, width, height), 0, 0);
+
+    if (candidate.upscale === 1) {
+      return processedCanvas.toDataURL('image/png');
+    }
+
+    const scaledWidth = width * candidate.upscale;
+    const scaledHeight = height * candidate.upscale;
+    OCR_IMAGE_UTILS.assertSafePixelDimensions(scaledWidth, scaledHeight);
+    const scaledCanvas = document.createElement('canvas');
+    scaledCanvas.width = scaledWidth;
+    scaledCanvas.height = scaledHeight;
+    const scaledContext = scaledCanvas.getContext('2d');
+    scaledContext.imageSmoothingEnabled = false;
+    scaledContext.drawImage(processedCanvas, 0, 0, scaledWidth, scaledHeight);
+    return scaledCanvas.toDataURL('image/png');
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -68,23 +126,40 @@
 
     (async () => {
       try {
-        const { dataUrl, cropRect, devicePixelRatio } = message;
+        const { dataUrl, cropRect, devicePixelRatio, preprocessingProfile, useRequestedPreprocessing, requestId } = message;
         if (!dataUrl || !cropRect) {
           throw new Error('캡처 이미지 또는 크롭 영역이 누락되었습니다.');
         }
 
         // 1. Crop image via canvas
-        const croppedDataUrl = await cropImage(dataUrl, cropRect, devicePixelRatio || 1);
+        const startedAt = performance.now();
+        const croppedImage = await cropImage(dataUrl, cropRect, devicePixelRatio || 1);
 
-        // 2. Run OCR via cached Tesseract worker
         const worker = await getWorker();
-        const { data } = await worker.recognize(croppedDataUrl);
-        const recognizedText = (data && data.text) ? data.text.trim() : '';
+        const plan = OCR_IMAGE_UTILS.createPreprocessingPlan(
+          croppedImage.crop.width,
+          croppedImage.crop.height,
+          croppedImage.pixels
+        );
+        const recognize = (candidate) => worker.recognize(createCandidateDataUrl(croppedImage, candidate))
+          .then(({ data }) => data);
+        const recognition = useRequestedPreprocessing === true &&
+          OCR_IMAGE_UTILS.PREPROCESSING_PROFILES.includes(preprocessingProfile)
+          ? {
+              data: await recognize(OCR_IMAGE_UTILS.normalizePreprocessing({ profile: preprocessingProfile })),
+              preprocessing: OCR_IMAGE_UTILS.normalizePreprocessing({ profile: preprocessingProfile })
+            }
+          : await OCR_IMAGE_UTILS.recognizeWithCandidates(recognize, plan.initial, plan.alternate);
 
-        sendResponse({ ok: true, text: recognizedText });
+        sendResponse({ ...OCR_IMAGE_UTILS.createOcrSuccessResponse(
+          recognition.data,
+          croppedImage.crop,
+          performance.now() - startedAt,
+          recognition.preprocessing
+        ), requestId });
       } catch (err) {
         console.error('Offscreen OCR error:', err);
-        sendResponse({ ok: false, error: err.message || String(err) });
+        sendResponse({ ok: false, error: err.message || String(err), requestId: message.requestId });
       }
     })();
 

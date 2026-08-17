@@ -19,29 +19,37 @@
 
 const SHARED = globalThis.RIGHT_CLICK_ON_WEB_SHARED;
 
+const EVENT_FEATURE_MAP = Object.freeze({
+  contextmenu: 'contextMenu',
+  selectstart: 'selection',
+  copy: 'copyShortcuts',
+  cut: 'copyShortcuts',
+  paste: 'copyShortcuts',
+  dragstart: 'dragStart',
+  dragover: 'dragDrop',
+  drop: 'dragDrop',
+  mousedown: 'contextMenu',
+  mouseup: 'contextMenu',
+  keydown: 'copyShortcuts'
+});
+
+const ATTRIBUTE_FEATURE_MAP = Object.freeze({
+  oncontextmenu: 'contextMenu',
+  onselectstart: 'selection',
+  oncopy: 'copyShortcuts',
+  oncut: 'copyShortcuts',
+  onpaste: 'copyShortcuts',
+  ondragstart: 'dragStart',
+  ondragover: 'dragDrop',
+  ondrop: 'dragDrop'
+});
+
 const RIGHT_CLICK_ON_WEB = {
   styleId: 'right-click-on-web-style',
   markerAttribute: 'data-right-click-on-web',
-  blockedAttributes: [
-    'oncontextmenu',
-    'onselectstart',
-    'oncopy',
-    'oncut',
-    'onpaste',
-    'ondragstart'
-  ],
-  blockedEvents: [
-    'contextmenu',
-    'selectstart',
-    'copy',
-    'cut',
-    'paste',
-    'dragstart',
-    'dragover',
-    'drop',
-    'mousedown',
-    'mouseup'
-  ],
+  blockedAttributes: Object.keys(ATTRIBUTE_FEATURE_MAP),
+  blockedEvents: Object.keys(EVENT_FEATURE_MAP).filter((name) => name !== 'keydown'),
+  // Periodic re-scan interval (ms). Catches anything MutationObserver
   // Periodic re-scan interval (ms). Catches anything MutationObserver
   // missed, e.g. attributeFilter-blind mutations on detached subtrees
   // that get re-attached. Paused while the tab is hidden.
@@ -49,27 +57,29 @@ const RIGHT_CLICK_ON_WEB = {
   // ~all observed mutations within a tick, so 5s is enough as a
   // detached-subtree safety net without burning main-thread cycles.
   rescanIntervalMs: 5000,
-  // Cross-world stats channel. Content scripts run in an isolated
-  // world, so window.__rightClickOnWebStats is invisible to page
-  // scripts. We mirror the stats JSON into a DOM element under
-  // documentElement — DOM nodes are shared across worlds, so the
-  // manual test page (and any future debugging surface) can read
-  // it via document.getElementById(STATS_DOM_ID).textContent.
-  // The element is a <script type="application/json"> to avoid
-  // any chance of execution or visual rendering.
+  // Legacy stats DOM id for cleanup. To protect web text editors, WYSIWYG
+  // canvases, and CMSs from capturing stats JSON during document save, stats
+  // are maintained purely in memory and queried on-demand via runtime messages
+  // or CustomEvents, rather than kept as persistent DOM elements.
   statsDomId: '__rightClickOnWebStats'
 };
 
 let enabled = true;
 let isActive = false;
 let currentMode = SHARED.DEFAULT_MODE;
+let currentPreset = SHARED.PRESET_SAFE;
+let currentFeatures = SHARED.parseDomainSetting({
+  enabled: true,
+  preset: SHARED.PRESET_SAFE
+}).features;
 let eventController = null;
 let observer = null;
 let shadowObserverMap = new Map();
 let knownShadowRoots = new Set();
+let neutralizedOverlayStyles = new Map();
 let rescanTimer = null;
+let idleRescans = new Set();
 let stats = createStats();
-let statsSyncQueued = false;
 
 function createStats() {
   const result = {
@@ -77,7 +87,7 @@ function createStats() {
       RIGHT_CLICK_ON_WEB.blockedAttributes.map((name) => [name, 0])
     ),
     eventInterceptions: Object.fromEntries(
-      RIGHT_CLICK_ON_WEB.blockedEvents.map((name) => [name, 0])
+      Object.keys(EVENT_FEATURE_MAP).map((name) => [name, 0])
     ),
     overlaysNeutralized: 0,
     shadowRootsScanned: 0,
@@ -88,7 +98,9 @@ function createStats() {
     // test page.
     resolveSource: 'initial',
     matchedDomain: null,
-    mode: SHARED.DEFAULT_MODE
+    mode: SHARED.DEFAULT_MODE,
+    preset: currentPreset,
+    features: { ...currentFeatures }
   };
   return result;
 }
@@ -96,68 +108,50 @@ function createStats() {
 function resetStats() {
   stats = createStats();
   window.__rightClickOnWebStats = stats;
-  syncStatsToDom();
 }
 
-// Create the cross-world stats element if it doesn't exist yet.
-// documentElement is available at document_start; head is preferred when
-// Chrome has already created it. Subsequent calls reuse the same element.
-function ensureStatsDomElement() {
-  let element = document.getElementById(RIGHT_CLICK_ON_WEB.statsDomId);
-  if (element) {
-    return element;
+function readDiagnosticStatsBridge() {
+  const current = (typeof stats === 'object' && stats !== null && !Array.isArray(stats))
+    ? stats
+    : (typeof window.__rightClickOnWebStats === 'object' && window.__rightClickOnWebStats !== null && !Array.isArray(window.__rightClickOnWebStats))
+      ? window.__rightClickOnWebStats
+      : null;
+
+  if (!current) {
+    return {
+      ok: false,
+      reason: '현재 탭에서 진단 브리지를 찾을 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'
+    };
   }
+
   try {
-    element = document.createElement('script');
-    element.type = 'application/json';
-    element.id = RIGHT_CLICK_ON_WEB.statsDomId;
-    // Marker so other observers can distinguish from arbitrary
-    // <script type="application/json"> elements the page may add.
-    element.setAttribute(RIGHT_CLICK_ON_WEB.markerAttribute, 'true');
-    (document.head || document.documentElement).appendChild(element);
+    const snapshot = JSON.parse(JSON.stringify(current));
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return {
+        ok: false,
+        reason: '진단 브리지 형식이 올바르지 않습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'
+      };
+    }
+    return { ok: true, stats: snapshot };
   } catch (_) {
-    // document.head/document.documentElement both unavailable —
-    // nothing we can do; window.__rightClickOnWebStats remains
-    // the fallback for DevTools inspection.
+    return {
+      ok: false,
+      reason: '진단 브리지를 읽을 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'
+    };
+  }
+}
+
+function handleDiagnosticStatsMessage(message) {
+  if (!message || message.type !== 'rcow:readDiagnosticStats') {
     return null;
   }
-  return element;
-}
-
-// Mirror the current stats object into the cross-world DOM element.
-// Called from key checkpoints and batched counter updates so the latest
-// snapshot is available without a timer.
-// The stringify cost for a ~10-counter object is negligible.
-function syncStatsToDom() {
-  const element = ensureStatsDomElement();
-  if (!element) {
-    return;
-  }
-  try {
-    element.textContent = JSON.stringify(stats);
-  } catch (_) {
-    // Circular references or quota — leave the previous snapshot in
-    // place rather than clear it, so the page sees stale-but-real
-    // data instead of an empty string.
-  }
-}
-
-function scheduleStatsSync() {
-  if (statsSyncQueued) {
-    return;
-  }
-  statsSyncQueued = true;
-  queueMicrotask(() => {
-    statsSyncQueued = false;
-    syncStatsToDom();
-  });
+  return readDiagnosticStatsBridge();
 }
 
 function bumpAttributeRemoval(attribute) {
   const counter = stats.attributeRemovals[attribute];
   if (typeof counter === 'number') {
     stats.attributeRemovals[attribute] = counter + 1;
-    scheduleStatsSync();
   }
 }
 
@@ -165,7 +159,6 @@ function bumpEventInterception(eventName) {
   const counter = stats.eventInterceptions[eventName];
   if (typeof counter === 'number') {
     stats.eventInterceptions[eventName] = counter + 1;
-    scheduleStatsSync();
   }
 }
 
@@ -198,50 +191,75 @@ function selectionStyleFor(root) {
   return root.querySelector(`#${RIGHT_CLICK_ON_WEB.styleId}`);
 }
 
+function buildUnlockerCss(features = currentFeatures) {
+  const rules = [];
+  if (features.ultimateCss && features.selection) {
+    rules.push(`
+      *:not(input):not(textarea),
+      *:not(input):not(textarea)::before,
+      *:not(input):not(textarea)::after {
+        -webkit-user-select: text !important;
+        -moz-user-select: text !important;
+        -ms-user-select: text !important;
+        user-select: text !important;
+      }
+      p, li, span, div, article, section, blockquote,
+      h1, h2, h3, h4, h5, h6, td, th, pre, code, label {
+        cursor: auto !important;
+      }
+    `);
+  }
+  if (features.ultimateCss && features.dragStart) {
+    rules.push(`
+      img, a {
+        -webkit-user-drag: auto !important;
+        -moz-user-drag: auto !important;
+        user-drag: auto !important;
+      }
+    `);
+  }
+  if (features.ultimateCss && features.contextMenu) {
+    rules.push(`
+      *:not(input):not(textarea) {
+        -webkit-touch-callout: default !important;
+      }
+    `);
+  }
+  if (features.ultimateCss && features.selection) {
+    rules.push(`
+      *:not(input):not(textarea)::selection {
+        background-color: #3390ff !important;
+        color: #ffffff !important;
+      }
+      *:not(input):not(textarea)::-moz-selection {
+        background-color: #3390ff !important;
+        color: #ffffff !important;
+      }
+    `);
+  }
+  if (features.printUnhide) {
+    rules.push(`
+      @media print {
+        body * {
+          display: revert !important;
+          visibility: visible !important;
+        }
+      }
+    `);
+  }
+  return rules.join('\n');
+}
+
 function injectSelectionStyle(root = document) {
-  if (selectionStyleFor(root)) {
+  const css = buildUnlockerCss();
+  if (!css || selectionStyleFor(root)) {
     return;
   }
 
   const style = document.createElement('style');
   style.id = RIGHT_CLICK_ON_WEB.styleId;
   style.setAttribute(RIGHT_CLICK_ON_WEB.markerAttribute, 'true');
-  style.textContent = `
-    *:not(input):not(textarea),
-    *:not(input):not(textarea)::before,
-    *:not(input):not(textarea)::after {
-      -webkit-user-select: text !important;
-      -moz-user-select: text !important;
-      -ms-user-select: text !important;
-      user-select: text !important;
-      -webkit-user-drag: auto !important;
-      -moz-user-drag: auto !important;
-      -webkit-touch-callout: default !important;
-    }
-    *:not(input):not(textarea)::selection {
-      background-color: #3390ff !important;
-      color: #ffffff !important;
-    }
-    *:not(input):not(textarea)::-moz-selection {
-      background-color: #3390ff !important;
-      color: #ffffff !important;
-    }
-    p, li, span, div, article, section, blockquote,
-    h1, h2, h3, h4, h5, h6, td, th, pre, code, label {
-      cursor: auto !important;
-    }
-    img, a {
-      -webkit-user-drag: auto !important;
-      -moz-user-drag: auto !important;
-      user-drag: auto !important;
-    }
-    @media print {
-      body * {
-        display: revert !important;
-        visibility: visible !important;
-      }
-    }
-  `;
+  style.textContent = css;
 
   const parent = root === document
     ? (document.head || document.documentElement)
@@ -279,8 +297,25 @@ function neutralizeBlockOverlay(element) {
     return false;
   }
 
+  if (!neutralizedOverlayStyles.has(element)) {
+    neutralizedOverlayStyles.set(element, {
+      value: element.style.getPropertyValue('pointer-events'),
+      priority: element.style.getPropertyPriority('pointer-events')
+    });
+  }
   element.style.setProperty('pointer-events', 'none', 'important');
   return true;
+}
+
+function restoreNeutralizedOverlays() {
+  for (const [element, previous] of neutralizedOverlayStyles) {
+    if (previous.value) {
+      element.style.setProperty('pointer-events', previous.value, previous.priority);
+    } else {
+      element.style.removeProperty('pointer-events');
+    }
+  }
+  neutralizedOverlayStyles = new Map();
 }
 
 function isTraversableRoot(root) {
@@ -292,17 +327,32 @@ function isTraversableRoot(root) {
   );
 }
 
-function collectBlockingAttributeCandidates(root) {
-  const selector = RIGHT_CLICK_ON_WEB.blockedAttributes.map((attribute) => `[${attribute}]`).join(',');
-  const candidates = [];
+function activeBlockedAttributes() {
+  return RIGHT_CLICK_ON_WEB.blockedAttributes.filter(
+    (attribute) => currentFeatures[ATTRIBUTE_FEATURE_MAP[attribute]]
+  );
+}
 
-  if (root instanceof Element && root.matches(selector)) {
-    candidates.push(root);
+function collectBlockingCandidates(root, attributes) {
+  const selector = attributes.map((attribute) => `[${attribute}]`).join(',');
+  const candidates = new Set();
+
+  if (root instanceof Element && (currentFeatures.overlayCleanup || (selector && root.matches(selector)))) {
+    candidates.add(root);
   }
 
-  candidates.push(...root.querySelectorAll(selector));
+  if (selector) {
+    for (const element of root.querySelectorAll(selector)) {
+      candidates.add(element);
+    }
+  }
+  if (currentFeatures.overlayCleanup) {
+    for (const element of root.querySelectorAll('*')) {
+      candidates.add(element);
+    }
+  }
 
-  return candidates;
+  return [...candidates];
 }
 
 // Pages that bypass content attributes via
@@ -402,33 +452,34 @@ function removeBlockingAttributes(root = document) {
 
   sweepDetachedShadowRoots();
 
-  const candidates = collectBlockingAttributeCandidates(root);
+  const attributes = activeBlockedAttributes();
+  const candidates = collectBlockingCandidates(root, attributes);
 
   for (const element of candidates) {
-    for (const attribute of RIGHT_CLICK_ON_WEB.blockedAttributes) {
+    for (const attribute of attributes) {
       if (element.hasAttribute(attribute)) {
         element.removeAttribute(attribute);
         bumpAttributeRemoval(attribute);
       }
       clearLockedIdlAttribute(element, attribute);
     }
-    if (neutralizeBlockOverlay(element)) {
+    if (currentFeatures.overlayCleanup && neutralizeBlockOverlay(element)) {
       stats.overlaysNeutralized += 1;
-      scheduleStatsSync();
     }
+  }
+
+  if (!currentFeatures.shadowDom) {
+    return;
   }
 
   for (const host of discoverShadowHosts(root)) {
     const shadow = host.shadowRoot;
     knownShadowRoots.add(shadow);
-    if (currentMode === SHARED.MODE_ULTIMATE) {
-      injectSelectionStyle(shadow);
-    }
+    injectSelectionStyle(shadow);
     if (shadowObserverMap.has(shadow)) {
       continue;
     }
     stats.shadowRootsScanned += 1;
-    scheduleStatsSync();
     const observerInstance = attachMutationObserver(shadow);
     if (observerInstance) {
       shadowObserverMap.set(shadow, observerInstance);
@@ -494,12 +545,16 @@ function attachMutationObserver(root) {
     }
   });
 
-  observerInstance.observe(target, {
+  const attributes = activeBlockedAttributes();
+  const observerOptions = {
     childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: RIGHT_CLICK_ON_WEB.blockedAttributes
-  });
+    subtree: true
+  };
+  if (attributes.length > 0) {
+    observerOptions.attributes = true;
+    observerOptions.attributeFilter = attributes;
+  }
+  observerInstance.observe(target, observerOptions);
 
   return observerInstance;
 }
@@ -516,6 +571,9 @@ function addEventInterceptors() {
   eventController = new AbortController();
 
   for (const eventName of RIGHT_CLICK_ON_WEB.blockedEvents) {
+    if (!currentFeatures[EVENT_FEATURE_MAP[eventName]]) {
+      continue;
+    }
     document.addEventListener(eventName, handleInterceptedEvent(eventName), {
       capture: true,
       passive: false,
@@ -523,24 +581,25 @@ function addEventInterceptors() {
     });
   }
 
-  // v0.7.0: Intercept keydown for copy shortcuts (Ctrl+C, Ctrl+A, Ctrl+X, Ctrl+Insert)
-  // Stops page handlers from preventDefault()-ing copy operations on non-editable elements
-  document.addEventListener('keydown', (event) => {
-    if (isEditableElement(event.target)) {
-      return;
-    }
-    const isModifier = event.ctrlKey || event.metaKey;
-    const keyCopy = ['c', 'a', 'x'].includes(event.key.toLowerCase());
-    const keyInsertCopy = event.key === 'Insert' && event.ctrlKey;
-    if (isModifier && (keyCopy || keyInsertCopy)) {
-      bumpEventInterception('keydown');
-      event.stopImmediatePropagation();
-    }
-  }, {
-    capture: true,
-    passive: false,
-    signal: eventController.signal
-  });
+  if (currentFeatures.copyShortcuts) {
+    document.addEventListener('keydown', (event) => {
+      if (isEditableElement(event.target)) {
+        return;
+      }
+      const isModifier = event.ctrlKey || event.metaKey;
+      const keyCopy = ['c', 'a', 'x'].includes(event.key.toLowerCase());
+      const keyInsertCopy = event.key === 'Insert' && (event.ctrlKey || event.metaKey);
+      const keyInsertPaste = event.key === 'Insert' && event.shiftKey;
+      if ((isModifier && keyCopy) || keyInsertCopy || keyInsertPaste) {
+        bumpEventInterception('keydown');
+        event.stopImmediatePropagation();
+      }
+    }, {
+      capture: true,
+      passive: false,
+      signal: eventController.signal
+    });
+  }
 }
 
 function scheduleIdle(callback) {
@@ -552,8 +611,14 @@ function scheduleIdle(callback) {
 
 function runPeriodicRescan() {
   stats.periodicRescans += 1;
-  scheduleStatsSync();
-  scheduleIdle(() => removeBlockingAttributes());
+  let handle;
+  handle = scheduleIdle(() => {
+    idleRescans.delete(handle);
+    if (isActive) {
+      removeBlockingAttributes();
+    }
+  });
+  idleRescans.add(handle);
 }
 
 function startPeriodicRescan() {
@@ -574,6 +639,14 @@ function stopPeriodicRescan() {
     clearInterval(rescanTimer);
     rescanTimer = null;
   }
+  for (const handle of idleRescans) {
+    if (typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(handle);
+    } else {
+      clearTimeout(handle);
+    }
+  }
+  idleRescans.clear();
 }
 
 function enableUnlocker() {
@@ -582,18 +655,17 @@ function enableUnlocker() {
   }
 
   resetStats();
-  // v0.5.0: only inject CSS in ultimate mode. In lite mode the page
-  // gets only the MAIN-world prototype patches (which already ran
-  // at document_start) and the capture-phase interceptors below —
-  // no user-select style override, so the page's own user-select
-  // rules are preserved.
-  if (currentMode === SHARED.MODE_ULTIMATE) {
-    injectSelectionStyles();
-  }
-  removeBlockingAttributes();
+  injectSelectionStyles();
   addEventInterceptors();
-  observeBlockingChanges();
-  startPeriodicRescan();
+
+  const hasDomCleanup = activeBlockedAttributes().length > 0
+    || currentFeatures.overlayCleanup
+    || currentFeatures.shadowDom;
+  if (hasDomCleanup) {
+    removeBlockingAttributes();
+    observeBlockingChanges();
+    startPeriodicRescan();
+  }
 
   isActive = true;
 }
@@ -612,36 +684,52 @@ function disableUnlocker() {
 
   stopPeriodicRescan();
   removeSelectionStyles();
+  restoreNeutralizedOverlays();
 
   knownShadowRoots = new Set();
 
   isActive = false;
 }
 
-// v0.5.0: setEnabled now also takes the resolved mode so the
-// unlocker knows whether to inject the CSS override. Pass
-// SHARED.DEFAULT_MODE when not using a domain-specific mode.
-function setEnabled(nextEnabled, nextMode) {
-  const previousMode = currentMode;
-  enabled = nextEnabled;
-  if (nextMode === SHARED.MODE_LITE || nextMode === SHARED.MODE_ULTIMATE) {
-    currentMode = nextMode;
-  } else {
-    currentMode = SHARED.DEFAULT_MODE;
+function profilesEqual(left, right) {
+  return left.mode === right.mode
+    && left.preset === right.preset
+    && SHARED.FEATURE_KEYS.every((key) => left.features[key] === right.features[key]);
+}
+
+function setEnabled(nextEnabled, nextProfile) {
+  const normalized = nextProfile
+    && typeof nextProfile === 'object'
+    && typeof nextProfile.enabled === 'boolean'
+    && typeof nextProfile.preset === 'string'
+    && nextProfile.features
+      ? nextProfile
+      : SHARED.parseDomainSetting({
+          ...nextProfile,
+          enabled: nextEnabled
+        });
+  const previousProfile = {
+    mode: currentMode,
+    preset: currentPreset,
+    features: currentFeatures
+  };
+  const profileChanged = !profilesEqual(previousProfile, normalized);
+
+  if (!isActive && eventController && profileChanged) {
+    eventController.abort();
+    eventController = null;
+  }
+  if (isActive && (!normalized.enabled || profileChanged)) {
+    disableUnlocker();
   }
 
-  if (enabled) {
-    if (isActive && previousMode !== currentMode) {
-      if (currentMode === SHARED.MODE_ULTIMATE) {
-        injectSelectionStyles();
-      } else {
-        removeSelectionStyles();
-      }
-    } else {
-      enableUnlocker();
-    }
-  } else {
-    disableUnlocker();
+  enabled = normalized.enabled;
+  currentMode = normalized.mode;
+  currentPreset = normalized.preset;
+  currentFeatures = normalized.features;
+
+  if (enabled && !isActive) {
+    enableUnlocker();
   }
 }
 
@@ -703,11 +791,10 @@ async function resolveEnabled() {
   const hostname = directHostname || resolveFrameHostname();
   if (!directHostname && window !== window.top && !hostname) {
     return {
-      enabled: false,
       source: 'opaque-origin-unresolved',
       hostname: '',
       matchedKey: null,
-      mode: SHARED.DEFAULT_MODE
+      ...SHARED.parseDomainSetting({ enabled: false, preset: SHARED.DEFAULT_PRESET })
     };
   }
 
@@ -721,11 +808,10 @@ async function resolveEnabled() {
       const sessionData = await SHARED.storageGet(chrome.storage.session, key);
       if (sessionData[key] === true) {
         return {
-          enabled: true,
           source: 'session',
           hostname,
           matchedKey: null,
-          mode: SHARED.MODE_ULTIMATE
+          ...SHARED.parseDomainSetting({ enabled: true, preset: SHARED.DEFAULT_PRESET })
         };
       }
     } catch (_) {
@@ -751,30 +837,23 @@ async function resolveEnabled() {
     const matchedKey = SHARED.resolveDomainKey(hostname, domainSettings);
     if (matchedKey !== null) {
       const entry = domainSettings[matchedKey];
-      // Defensive: tolerate unmigrated boolean entries.
-      let entryEnabled = false;
-      if (typeof entry === 'boolean') {
-        entryEnabled = entry !== false;
-      } else if (entry && typeof entry === 'object') {
-        entryEnabled = entry.enabled !== false;
-      }
-      const mode = SHARED.resolveMode(hostname, domainSettings) || SHARED.DEFAULT_MODE;
       return {
-        enabled: entryEnabled,
         source: 'domain',
         hostname,
         matchedKey,
-        mode
+        ...SHARED.parseDomainSetting(entry)
       };
     }
   }
 
   return {
-    enabled: globalEnabled,
     source: hostname ? 'global' : 'global-no-host',
     hostname,
     matchedKey: null,
-    mode: SHARED.DEFAULT_MODE
+    ...SHARED.parseDomainSetting({
+      enabled: globalEnabled,
+      preset: SHARED.DEFAULT_PRESET
+    })
   };
 }
 
@@ -795,20 +874,18 @@ function resolveAndApply() {
       if (!result) {
         return;
       }
-      setEnabled(result.enabled, result.mode);
+      setEnabled(result.enabled, result);
       // Surface the decision on the public stats object so the
       // manual test page and any future debugging UI can show
       // *why* the unlocker is on or off.
       try {
-        if (window.__rightClickOnWebStats) {
-          window.__rightClickOnWebStats.resolveSource = result.source;
-          window.__rightClickOnWebStats.matchedDomain = result.matchedKey;
-          window.__rightClickOnWebStats.mode = result.mode || SHARED.DEFAULT_MODE;
+        if (stats) {
+          stats.resolveSource = result.source;
+          stats.matchedDomain = result.matchedKey;
+          stats.mode = result.mode || SHARED.DEFAULT_MODE;
+          stats.preset = result.preset;
+          stats.features = { ...result.features };
         }
-        // Mirror the updated snapshot across worlds so the manual
-        // QA panel (page context) sees the latest decision without
-        // needing to scrape window.* from an isolated context.
-        syncStatsToDom();
       } catch (_) {
         // Stats object may not exist yet — safe to ignore.
       }
@@ -862,3 +939,33 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     resolveAndApply();
   }
 });
+
+// Clean up any legacy stats DOM element to prevent web editor leakage
+try {
+  document.getElementById(RIGHT_CLICK_ON_WEB.statsDomId)?.remove();
+} catch (_) {
+  // DOM not ready or restricted
+}
+
+// Cross-world QA event bridge — allows manual test pages to query stats on-demand
+// without polluting the DOM tree or serializing scripts into web editors.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('rcow:requestStats', () => {
+    try {
+      window.dispatchEvent(new CustomEvent('rcow:responseStats', {
+        detail: JSON.stringify(stats)
+      }));
+    } catch (_) {
+      // Ignore cross-context dispatch errors
+    }
+  });
+}
+
+if (chrome.runtime && chrome.runtime.onMessage && typeof chrome.runtime.onMessage.addListener === 'function') {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const response = handleDiagnosticStatsMessage(message);
+    if (response) {
+      sendResponse(response);
+    }
+  });
+}

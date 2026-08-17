@@ -36,8 +36,29 @@
 // load (it is declared in manifest.json). Toggling the extension OFF
 // from the popup cannot unpatch the page, because the prototypes were
 // replaced at document_start and there is no way to retroactively
-// recover the page's discarded listeners. Full OFF requires disabling
-// the extension at chrome://extensions or reloading the tab.
+// recover the page's discarded listeners. Reloading the tab while the
+// extension remains enabled re-runs this script at document_start and
+// re-installs the same patches. Complete restoration requires disabling
+// the extension at chrome://extensions AND reloading the tab.
+//
+// Design constraint (task 2.3): this script MUST NOT read chrome.storage
+// or any per-domain setting before installing its prototype patches.
+// The entire value of the MAIN-world patch is that it runs synchronously
+// at document_start, BEFORE any page script can register blocking
+// listeners. An async storage read would surrender that preemptive
+// guarantee — the page would have already installed its handlers by
+// the time the read resolved. The ISOLATED-world content.js is the only
+// context that reads storage and gates ISOLATED-only behavior; MAIN
+// patches are always-on and cannot be conditionally installed.
+//
+// UI contract (task 2.3): the popup MUST NOT promise that toggling OFF
+// or switching a profile immediately removes already-installed MAIN-
+// world prototype patches, nor that an ordinary tab reload alone
+// removes them. The popup must communicate that MAIN patches persist
+// for the page's lifetime and re-appear after reload while the
+// extension remains enabled; complete restoration requires disabling
+// the extension and reloading the tab. The ISOLATED-world teardown
+// (CSS, capture interceptors, observer, rescan timer) is immediate.
 
 (function mainWorldPatch() {
   if (window.__rightClickOnWebMainWorldPatched === true) {

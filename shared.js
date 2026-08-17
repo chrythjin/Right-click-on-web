@@ -10,12 +10,232 @@
 //     across the popup (decides what the user toggled), the content
 //     script (decides whether to apply unlocker), and the background
 //     service worker (decides whether to migrate defaults).
-//   - No build step in this project (per AGENTS.md): we ship plain
-//     <script> loads, so this file is one shared IIFE-style script
-//     that exposes a single window-scoped object.
+//   - No build step in this project (per AGENTS.md): browser <script>
+//     loading exposes RIGHT_CLICK_ON_WEB_SHARED, while Node require()
+//     returns only the pure settings utilities used by unit tests.
 
-(function sharedInit() {
+const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
   'use strict';
+
+  const MODE_LITE = 'lite';
+  const MODE_ULTIMATE = 'ultimate';
+  const DEFAULT_MODE = MODE_ULTIMATE;
+  const VALID_MODES = Object.freeze([MODE_LITE, MODE_ULTIMATE]);
+
+  const PRESET_SAFE = 'safe';
+  const PRESET_SELECTION = 'selection';
+  const PRESET_COMPLETE = 'complete';
+  const PRESET_UPLOAD_SAFE = 'upload-safe';
+  const PRESET_MEDIA_SAFE = 'media-safe';
+  const PRESET_CUSTOM = 'custom';
+  const DEFAULT_PRESET = PRESET_COMPLETE;
+  const VALID_PRESETS = Object.freeze([
+    PRESET_SAFE,
+    PRESET_SELECTION,
+    PRESET_COMPLETE,
+    PRESET_UPLOAD_SAFE,
+    PRESET_MEDIA_SAFE,
+    PRESET_CUSTOM
+  ]);
+  const FEATURE_KEYS = Object.freeze([
+    'contextMenu',
+    'selection',
+    'copyShortcuts',
+    'dragStart',
+    'dragDrop',
+    'overlayCleanup',
+    'printUnhide',
+    'shadowDom',
+    'ultimateCss'
+  ]);
+  const DEFAULT_FEATURES = Object.freeze({
+    contextMenu: true,
+    selection: true,
+    copyShortcuts: true,
+    dragStart: true,
+    dragDrop: true,
+    overlayCleanup: true,
+    printUnhide: true,
+    shadowDom: true,
+    ultimateCss: true
+  });
+  const PRESET_FEATURES = Object.freeze({
+    [PRESET_SAFE]: Object.freeze({
+      contextMenu: true,
+      selection: true,
+      copyShortcuts: true,
+      dragStart: false,
+      dragDrop: false,
+      overlayCleanup: false,
+      printUnhide: false,
+      shadowDom: false,
+      ultimateCss: true
+    }),
+    [PRESET_SELECTION]: Object.freeze({
+      contextMenu: false,
+      selection: true,
+      copyShortcuts: true,
+      dragStart: false,
+      dragDrop: false,
+      overlayCleanup: false,
+      printUnhide: true,
+      shadowDom: false,
+      ultimateCss: true
+    }),
+    [PRESET_COMPLETE]: DEFAULT_FEATURES,
+    [PRESET_UPLOAD_SAFE]: Object.freeze({
+      ...DEFAULT_FEATURES,
+      dragDrop: false
+    }),
+    [PRESET_MEDIA_SAFE]: Object.freeze({
+      contextMenu: true,
+      selection: true,
+      copyShortcuts: true,
+      dragStart: false,
+      dragDrop: false,
+      overlayCleanup: false,
+      printUnhide: false,
+      shadowDom: false,
+      ultimateCss: true
+    })
+  });
+
+  function isPlainObject(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype === null) {
+      return true;
+    }
+    const constructorDescriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+    const constructor = constructorDescriptor && Object.prototype.hasOwnProperty.call(constructorDescriptor, 'value')
+      ? constructorDescriptor.value
+      : null;
+    return Object.getPrototypeOf(prototype) === null
+      && typeof constructor === 'function'
+      && constructor.prototype === prototype
+      && Function.prototype.toString.call(constructor) === Function.prototype.toString.call(Object);
+  }
+
+  function copyFeatureMap(source, defaults) {
+    const features = {};
+    for (const key of FEATURE_KEYS) {
+      features[key] = Object.prototype.hasOwnProperty.call(source, key)
+        && typeof source[key] === 'boolean'
+        ? source[key]
+        : defaults[key];
+    }
+    return features;
+  }
+
+  function parseDomainSetting(value) {
+    let enabled = false;
+    let mode = DEFAULT_MODE;
+    if (value === true) {
+      enabled = true;
+    } else if (value === false) {
+      enabled = false;
+    } else if (isPlainObject(value)) {
+      enabled = !Object.prototype.hasOwnProperty.call(value, 'enabled') || value.enabled !== false;
+      const rawMode = Object.prototype.hasOwnProperty.call(value, 'mode')
+        && typeof value.mode === 'string'
+        ? value.mode
+        : DEFAULT_MODE;
+      mode = VALID_MODES.includes(rawMode) ? rawMode : DEFAULT_MODE;
+    }
+
+    const requestedPreset = isPlainObject(value)
+      && Object.prototype.hasOwnProperty.call(value, 'preset')
+      && typeof value.preset === 'string'
+      ? value.preset
+      : null;
+    const hasValidPreset = VALID_PRESETS.includes(requestedPreset);
+    let preset = hasValidPreset ? requestedPreset : DEFAULT_PRESET;
+    let features;
+    if (preset === PRESET_CUSTOM) {
+      const customFeatures = Object.prototype.hasOwnProperty.call(value, 'features')
+        && isPlainObject(value.features)
+        ? value.features
+        : {};
+      const legacyDefaults = mode === MODE_LITE
+        ? { ...DEFAULT_FEATURES, ultimateCss: false }
+        : DEFAULT_FEATURES;
+      features = copyFeatureMap(customFeatures, legacyDefaults);
+    } else if (hasValidPreset && PRESET_FEATURES[preset]) {
+      const presetFeatures = mode === MODE_LITE
+        ? { ...PRESET_FEATURES[preset], ultimateCss: false }
+        : PRESET_FEATURES[preset];
+      features = copyFeatureMap(presetFeatures, DEFAULT_FEATURES);
+    } else if (mode === MODE_LITE) {
+      preset = PRESET_CUSTOM;
+      features = copyFeatureMap({}, { ...DEFAULT_FEATURES, ultimateCss: false });
+    } else {
+      features = copyFeatureMap(DEFAULT_FEATURES, DEFAULT_FEATURES);
+    }
+    return { enabled, mode, preset, features };
+  }
+
+  function normalizeDomainSettings(domainSettings) {
+    const out = Object.create(null);
+    if (!isPlainObject(domainSettings)) {
+      return out;
+    }
+    for (const host of Object.keys(domainSettings)) {
+      out[host] = parseDomainSetting(domainSettings[host]);
+    }
+    return out;
+  }
+
+  return Object.freeze({
+    MODE_LITE,
+    MODE_ULTIMATE,
+    DEFAULT_MODE,
+    VALID_MODES,
+    PRESET_SAFE,
+    PRESET_SELECTION,
+    PRESET_COMPLETE,
+    PRESET_UPLOAD_SAFE,
+    PRESET_MEDIA_SAFE,
+    PRESET_CUSTOM,
+    DEFAULT_PRESET,
+    VALID_PRESETS,
+    FEATURE_KEYS,
+    DEFAULT_FEATURES,
+    PRESET_FEATURES,
+    parseDomainSetting,
+    normalizeDomainSettings
+  });
+})();
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Object.freeze({
+    parseDomainSetting: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.parseDomainSetting,
+    normalizeDomainSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeDomainSettings
+  });
+} else {
+(function sharedInit(SETTINGS_UTILS) {
+  'use strict';
+
+  const {
+    MODE_LITE,
+    MODE_ULTIMATE,
+    DEFAULT_MODE,
+    VALID_MODES,
+    PRESET_SAFE,
+    PRESET_SELECTION,
+    PRESET_COMPLETE,
+    PRESET_UPLOAD_SAFE,
+    PRESET_MEDIA_SAFE,
+    PRESET_CUSTOM,
+    DEFAULT_PRESET,
+    VALID_PRESETS,
+    FEATURE_KEYS,
+    DEFAULT_FEATURES,
+    PRESET_FEATURES,
+    parseDomainSetting,
+    normalizeDomainSettings
+  } = SETTINGS_UTILS;
 
   // Public suffix blocklist — minimal subset of common multi-part TLDs.
   // Used as a safety net: a matching public suffix stops parent-domain
@@ -65,35 +285,6 @@
   // are normalized by background.js's migrateDomainSettings() on
   // install/update, but parseDomainSetting() also handles the live
   // case where content script / popup encounter an unmigrated entry.
-  const MODE_LITE = 'lite';
-  const MODE_ULTIMATE = 'ultimate';
-  const DEFAULT_MODE = MODE_ULTIMATE;
-  const VALID_MODES = Object.freeze([MODE_LITE, MODE_ULTIMATE]);
-
-  // Normalize a raw domainSettings entry into { enabled, mode }.
-  // Used by background.js (mass migration) and by both the content
-  // script + popup for defensive reads. Returns:
-  //   true                          -> { enabled: true,  mode: 'ultimate' }
-  //   false                         -> { enabled: false, mode: 'ultimate' }
-  //   { enabled, mode: 'lite' }     -> same (with validation)
-  //   { enabled, mode: <unknown> }  -> mode falls back to DEFAULT_MODE
-  //   anything else                 -> { enabled: false, mode: DEFAULT_MODE }
-  function parseDomainSetting(value) {
-    if (value === true) {
-      return { enabled: true, mode: DEFAULT_MODE };
-    }
-    if (value === false) {
-      return { enabled: false, mode: DEFAULT_MODE };
-    }
-    if (value && typeof value === 'object') {
-      const enabled = value.enabled !== false;
-      const rawMode = typeof value.mode === 'string' ? value.mode : DEFAULT_MODE;
-      const mode = VALID_MODES.indexOf(rawMode) !== -1 ? rawMode : DEFAULT_MODE;
-      return { enabled, mode };
-    }
-    return { enabled: false, mode: DEFAULT_MODE };
-  }
-
   const SESSION_KEY_PREFIX = 'session:';
   const LOCAL_FALLBACK_KEYS = '__rightClickOnWebSyncFallbackKeys';
 
@@ -250,21 +441,6 @@
       return entry.mode === MODE_LITE ? MODE_LITE : MODE_ULTIMATE;
     }
     return null;
-  }
-
-  // Walk a domainSettings map and replace every entry with the
-  // normalized { enabled, mode } object. Used by background.js to
-  // convert pre-v0.5.0 boolean entries en masse on install/update.
-  // Returns a new object — the input is not mutated.
-  function normalizeDomainSettings(domainSettings) {
-    const out = {};
-    if (!domainSettings || typeof domainSettings !== 'object') {
-      return out;
-    }
-    for (const host of Object.keys(domainSettings)) {
-      out[host] = parseDomainSetting(domainSettings[host]);
-    }
-    return out;
   }
 
   // Promise wrappers around chrome.storage callbacks. Content scripts
@@ -473,6 +649,17 @@
     MODE_ULTIMATE,
     DEFAULT_MODE,
     VALID_MODES,
+    PRESET_SAFE,
+    PRESET_SELECTION,
+    PRESET_COMPLETE,
+    PRESET_UPLOAD_SAFE,
+    PRESET_MEDIA_SAFE,
+    PRESET_CUSTOM,
+    DEFAULT_PRESET,
+    VALID_PRESETS,
+    FEATURE_KEYS,
+    DEFAULT_FEATURES,
+    PRESET_FEATURES,
     sessionKeyFor,
     getHostname,
     resolveDomainKey,
@@ -493,4 +680,5 @@
   if (typeof globalThis !== 'undefined') {
     globalThis.RIGHT_CLICK_ON_WEB_SHARED = exportObject;
   }
-})();
+})(RIGHT_CLICK_ON_WEB_SETTINGS_UTILS);
+}

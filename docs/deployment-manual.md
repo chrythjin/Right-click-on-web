@@ -36,7 +36,7 @@ graph TD
   2. GitHub 저장소 설정(Settings) -> Pages 메뉴에서 GitHub Pages를 활성화합니다.
   3. 활성화된 URL(예: `https://chrythjin.github.io/Right-click-on-web/privacy-policy.html`)을 확보합니다.
 * **최소 개인정보처리방침 내용 구성**:
-   > 본 프로그램은 사용자의 브라우징 데이터나 개인정보를 수집하거나 원격 서버로 전송하지 않습니다. 사용자가 직접 설정한 전역·도메인별 옵션만 브라우저의 `chrome.storage.sync`에 동기화되며, 동기화가 불가능한 경우 `chrome.storage.local`에 현재 기기용으로 저장됩니다.
+   > 본 프로그램은 화면 캡처 픽셀을 로컬 OCR 처리 중 메모리에만 유지하며 저장·전송하지 않습니다. 원격 코드 로딩, 텔레메트리, 클라우드 OCR, 화면 콘텐츠 업로드가 없습니다. 설정은 `chrome.storage.sync/local`에 저장되고, OCR 기록은 기본 OFF이며 opt-in 시 최종 텍스트와 제한 메타데이터만 `chrome.storage.local`에 저장됩니다. 마지막 영역 반복은 browser-session geometry만 보관하고 검증 후 새 화면을 캡처합니다.
 
 ---
 
@@ -49,14 +49,14 @@ graph TD
 프로젝트 루트 폴더에서 PowerShell을 열고 다음 명령어를 실행합니다.
 
 ```powershell
-Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,icons -DestinationPath "right-click-on-web-v0.6.3.zip" -Force
+Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.0.zip" -Force
 ```
 
-* **포함 대상**: `manifest.json`, `shared.js`, `background.js`, `content.js`, `content-main.js`, `popup.html`, `popup.css`, `popup.js`, `options.html`, `options.css`, `options.js`, `icons/`
+* **포함 대상**: `manifest.json`, `shared.js`, OCR helper(`ocr-session-utils.js`, `ocr-history.js`, `toolbar-action-utils.js`, `image-context.js`, `keyboard-utils.js`, `ocr-image-utils.js`), `background.js`, 콘텐츠/overlay/offscreen 스크립트와 CSS/HTML, `lib/`, `langs/`, `icons/`
   - ⚠️ **`content-main.js` (MAIN world 패처) 반드시 포함** — v0.2.0 듀얼 스크립트 아키텍처의 핵심. 누락 시 페이지 차단 스크립트 무력화가 동작하지 않음.
 * **제외 대상**: `.git/`, `.serena/`, `.omo/`, `history/`, `docs/`, `tests/`, `README.md`, `popup-preview.html`
 
-압축 결과물인 `right-click-on-web-v0.6.3.zip` 파일이 생성됩니다.
+압축 결과물인 `right-click-on-web-v0.10.0.zip` 파일이 생성됩니다.
 
 ---
 
@@ -64,7 +64,7 @@ Compress-Archive -Path manifest.json,shared.js,background.js,content.js,content-
 
 1. [Chrome 개발자 대시보드](https://chrome.google.com/webstore/devconsole)로 이동합니다.
 2. 오른쪽 상단의 **[+ 새 항목]** 또는 **[Add new item]** 버튼을 클릭합니다.
-3. 2단계에서 생성한 `right-click-on-web-v0.6.3.zip` 파일을 드래그하여 업로드합니다.
+3. 2단계에서 생성한 `right-click-on-web-v0.10.0.zip` 파일을 드래그하여 업로드합니다.
 
 ---
 
@@ -74,10 +74,10 @@ ZIP 업로드가 완료되면 대시보드 내 좌측 메뉴를 순서대로 채
 
 ### ① 스토어 명세 (Store Listing)
 * **이름**: `Right-click on Web` (manifest.json의 이름이 기본 입력됨)
-* **짧은 설명**: `우클릭, 선택, 복사 방해를 일반 웹으로 되돌립니다.` (최대 132자)
+* **짧은 설명**: `막힌 웹 텍스트를 복구하고 선택 불가능한 화면 텍스트를 로컬 OCR로 추출합니다.` (최대 132자)
 * **상세 설명**: 아래 서식 참고하여 입력
   ```text
-  우클릭 방지, 텍스트 드래그 선택 방지, 복사/잘라내기 방지 설정을 완화하여 일반적인 웹 브라우징 상태로 안전하게 복원합니다.
+   우클릭 방지, 텍스트 드래그 선택 방지, 복사/잘라내기 방지 설정을 완화하고 선택할 수 없는 보이는 텍스트를 기기 내 OCR로 추출합니다.
 
   [주요 기능]
   - 잠겨있는 마우스 오른쪽 버튼 메뉴(콘텍스트 메뉴) 복원
@@ -85,24 +85,25 @@ ZIP 업로드가 완료되면 대시보드 내 좌측 메뉴를 순서대로 채
   - 복사(Ctrl+C) 및 잘라내기 단작동 정상화
    - 직관적인 팝업 UI를 통한 원클릭 전역 ON/OFF 제어
    - 전체 설정 화면에서 저장된 사이트별 ON/OFF·Lite/Ultimate 모드 관리
-  - 리소스 낭비가 없는 가볍고 빠른 논-블로킹 설계
+   - 사용자 요청 화면 영역·이미지의 로컬 WASM OCR 텍스트 추출
+   - 기본 OFF인 선택형 로컬 OCR 기록과 같은 수동 영역 새 캡처 반복
 
   [제한 사항]
-  - 이 프로그램은 기술적 표준에 따라 동작하므로, 웹 표준 외부의 시스템(DRM 보호 미디어, 금융 보안 화면, 이미지/캔버스 안에 그려진 글자, 캡슐화된 Shadow DOM) 내에서는 작동이 제한될 수 있습니다.
+   - 이 프로그램은 DRM, 서버에서 제공하지 않는 텍스트, sandbox iframe, 현재 화면에 보이지 않는 콘텐츠에서는 제한될 수 있습니다.
 
   [개인정보 보호 약속]
-   - 본 프로그램은 사용자 정보를 수집·가공·원격 서버로 전송하지 않습니다. 사용자가 직접 지정한 설정만 브라우저 동기화에 저장됩니다.
+    - 캡처 픽셀은 로컬 OCR 처리 중 메모리에만 존재하고 저장·전송되지 않습니다. 원격 코드 로딩, 텔레메트리, 클라우드 OCR이 없으며 OCR 기록은 기본 OFF, opt-in 시 현재 기기에만 저장됩니다.
   ```
 * **카테고리**: `생산성` (Productivity) 또는 `도구` (Developer Tools)
 * **스크린샷**: 1단계에서 준비한 PNG 파일 업로드
 
 ### ② 개인정보 보호 선언 (Privacy)
 * **단일 목적 선언(Single Purpose)**: 
-  - `이 확장 프로그램은 웹 페이지의 마우스 우클릭, 드래그 선택, 복사 차단 스크립트를 완화하여 사용자 편의를 도모하는 하나의 목적으로만 작동합니다.`
+   - `이 확장 프로그램은 막힌 웹 텍스트를 복구하고 선택 불가능한 화면 텍스트를 로컬 OCR로 추출하는 하나의 목적으로만 작동합니다.`
 * **사용 권한 선언(Permission Justification)**:
-  - `<all_urls>`(또는 호스트 권한) 사유: `사용자가 방문하는 다양한 웹 사이트의 차단 스크립트를 실시간으로 감지하고 완화하기 위해 전체 웹 주소 접근 권한이 필요합니다.`
+   - 권한 사유: `<all_urls>`는 차단 완화·사용자 요청 이미지 OCR 좌표 확인, `activeTab`은 요청 탭 확인·캡처, `storage`는 설정·선택형 기록·세션 상태, `contextMenus`는 요청 메뉴, `sidePanel`은 설정·결과 관리, `offscreen`은 확장 내부 로컬 OCR에 사용합니다.
 * **데이터 사용 수집(Data Practices)**:
-  - 모든 항목에 **[수집하지 않음]** 또는 **[아니오]**를 체크합니다. (실제 데이터 수집 기능이 없으므로 중요)
+   - 외부 수집·공유 항목은 **[수집하지 않음]** 또는 **[아니오]**로 답합니다. opt-in OCR 기록은 사용자 기기의 `chrome.storage.local`에만 보관되며 외부 수집·공유가 아닙니다.
 * **개인정보처리방침 URL**: 1단계에서 확보한 GitHub Pages 등의 개인정보처리방침 주소를 붙여넣습니다.
 
 ### ③ 제출 및 심사 (Submit for Review)

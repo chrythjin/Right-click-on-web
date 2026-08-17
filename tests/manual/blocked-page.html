@@ -470,27 +470,34 @@
       document.getElementById('showStats').addEventListener('click', () => {
         const panel = document.getElementById('counterPanel');
         const out = document.getElementById('counterOutput');
-        // v0.6.2: read stats from the cross-world DOM channel —
-        // <script type="application/json" id="__rightClickOnWebStats">
-        // — written by content.js. window.__rightClickOnWebStats is
-        // set in the isolated world and not visible to page scripts.
-        const dom = document.getElementById('__rightClickOnWebStats');
-        const raw = dom ? dom.textContent : '';
-        try {
-          if (!raw || dom.getAttribute('data-right-click-on-web') !== 'true') {
-            out.textContent = '통계 데이터 없음 (확장이 OFF이거나 로드 전)';
-          } else {
-            const stats = JSON.parse(raw);
-            if (!stats || typeof stats !== 'object' ||
-                !stats.attributeRemovals || !stats.eventInterceptions ||
-                typeof stats.periodicRescans !== 'number') {
+        // Query stats via cross-world CustomEvent bridge without polluting DOM
+        let received = false;
+        const onResponse = (event) => {
+          received = true;
+          window.removeEventListener('rcow:responseStats', onResponse);
+          try {
+            const raw = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail;
+            if (!raw || typeof raw !== 'object' ||
+                !raw.attributeRemovals || !raw.eventInterceptions ||
+                typeof raw.periodicRescans !== 'number') {
               throw new Error('invalid stats schema');
             }
-            out.textContent = JSON.stringify(stats, null, 2);
+            out.textContent = JSON.stringify(raw, null, 2);
+          } catch (error) {
+            out.textContent = '통계 데이터 파싱 오류';
           }
-        } catch (error) {
-          out.textContent = '통계 데이터 파싱 오류';
-        }
+        };
+
+        window.addEventListener('rcow:responseStats', onResponse);
+        window.dispatchEvent(new CustomEvent('rcow:requestStats'));
+
+        setTimeout(() => {
+          if (!received) {
+            window.removeEventListener('rcow:responseStats', onResponse);
+            out.textContent = '통계 데이터 없음 (확장이 OFF이거나 로드 전)';
+          }
+        }, 150);
+
         panel.hidden = !panel.hidden;
       });
     </script>

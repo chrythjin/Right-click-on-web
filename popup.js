@@ -34,6 +34,12 @@ const state = {
   sessionActive: false,
   effectiveEnabled: true,
   effectiveMode: SHARED.DEFAULT_MODE,
+  // v0.9.1 task 2.4: effective preset derived from the matched domain
+  // entry's feature profile, or the canonical default-complete
+  // snapshot when no entry exists. Session overrides enabled only;
+  // the profile always comes from the matched domain or the default.
+  effectivePreset: SHARED.PRESET_COMPLETE,
+  enabledSource: 'global',
   syncAvailable: false,
   syncBytesInUse: 0,
   lastWriteFallback: false
@@ -48,12 +54,20 @@ const elements = {
   modeLite: document.getElementById('modeLite'),
   modeUltimate: document.getElementById('modeUltimate'),
   modeHint: document.getElementById('modeHint'),
+  presetSafe: document.getElementById('presetSafe'),
+  presetComplete: document.getElementById('presetComplete'),
+  presetUploadSafe: document.getElementById('presetUploadSafe'),
+  presetHint: document.getElementById('presetHint'),
+  effectiveSource: document.getElementById('effectiveSource'),
   sessionButton: document.getElementById('sessionButton'),
   sessionNotice: document.getElementById('sessionNotice'),
   syncUsage: document.getElementById('syncUsage'),
+  copyDiagnosticButton: document.getElementById('copyDiagnosticButton'),
+  diagnosticStatus: document.getElementById('diagnosticStatus'),
   ocrButton: document.getElementById('ocrButton'),
   openOptionsButton: document.getElementById('openOptionsButton'),
-  openSidePanelButton: document.getElementById('openSidePanelButton')
+  openSidePanelButton: document.getElementById('openSidePanelButton'),
+  mainWorldNotice: document.getElementById('mainWorldNotice')
 };
 // Fail fast if popup.html is out of sync with popup.js — a silent
 // blank popup is harder to debug than a script error at startup.
@@ -131,6 +145,11 @@ async function loadState() {
     ? SHARED.MODE_ULTIMATE
     : state.domainMode;
 
+  // v0.9.1 task 2.4: derive effective preset and enabled source.
+  const presetState = computePresetState(state, SHARED);
+  state.effectivePreset = presetState.displayPreset;
+  state.enabledSource = presetState.source;
+
   // Sync usage probe — best effort. syncAvailable is set true when
   // getBytesInUse returns a non-zero value; a successful write is
   // the alternate signal (used by the toggle handlers' fallback).
@@ -172,6 +191,11 @@ function render() {
     elements.modeLite.disabled = true;
     elements.modeUltimate.disabled = true;
     elements.modeHint.textContent = '도메인 설정 가능 시 모드를 선택할 수 있습니다.';
+    elements.presetSafe.disabled = true;
+    elements.presetComplete.disabled = true;
+    elements.presetUploadSafe.disabled = true;
+    elements.presetHint.textContent = '도메인 설정 가능 시 호환성 프리셋을 선택할 수 있습니다.';
+    elements.effectiveSource.textContent = '';
     return;
   }
 
@@ -222,6 +246,8 @@ function render() {
   elements.modeUltimate.classList.toggle('is-active', activeMode === SHARED.MODE_ULTIMATE);
   elements.modeLite.setAttribute('aria-checked', String(activeMode === SHARED.MODE_LITE));
   elements.modeUltimate.setAttribute('aria-checked', String(activeMode === SHARED.MODE_ULTIMATE));
+  elements.modeLite.setAttribute('tabindex', String(activeMode === SHARED.MODE_LITE ? 0 : -1));
+  elements.modeUltimate.setAttribute('tabindex', String(activeMode === SHARED.MODE_ULTIMATE ? 0 : -1));
   if (state.sessionActive) {
     elements.modeHint.textContent = '세션 활성 중 — 잠시 후 새로고침되며 Ultimate로 동작합니다.';
   } else if (!hasDomainEntry) {
@@ -232,9 +258,52 @@ function render() {
       : 'Ultimate — 블록 지정 활성화 (CSS 드래그 강제 허용 + 완전 복사)';
   }
 
+  // ---- Preset toggle (v0.9.1 task 2.4) ----
+  // The preset radiogroup shows the effective compatibility profile
+  // derived from the matched domain entry (parent or exact) or the
+  // default-complete snapshot. Session overrides enabled only; the
+  // profile continues to govern the tab, so preset controls stay
+  // enabled during session. For options-only presets (selection,
+  // media-safe, custom) no radio button is highlighted — the popup
+  // shows an honest "advanced/custom" hint instead of falsely
+  // highlighting Complete.
+  const presetState = computePresetState(state, SHARED);
+  const presetButtons = [
+    { el: elements.presetSafe, id: SHARED.PRESET_SAFE },
+    { el: elements.presetComplete, id: SHARED.PRESET_COMPLETE },
+    { el: elements.presetUploadSafe, id: SHARED.PRESET_UPLOAD_SAFE }
+  ];
+  for (const { el, id } of presetButtons) {
+    const isActive = presetState.isPopupPreset && presetState.displayPreset === id;
+    el.disabled = !presetState.canSelect;
+    el.classList.toggle('is-active', isActive);
+    el.setAttribute('aria-checked', String(isActive));
+    el.setAttribute('tabindex', String(
+      computePresetTabindex(id, isActive, presetState.isPopupPreset, presetState.canSelect, SHARED)
+    ));
+  }
+  if (!presetState.isPopupPreset) {
+    const advancedLabel = advancedPresetLabelKorean(presetState.displayPreset);
+    elements.presetHint.textContent = `현재 프로필: ${advancedLabel} — 옵션 페이지에서 변경 가능합니다. 팝업에서 안전/완전/업로드 보호 중 하나를 선택하면 이 사이트 전용 설정으로 전환됩니다.`;
+  } else if (state.sessionActive) {
+    elements.presetHint.textContent = '세션 활성 중 — 활성화만 세션이 덮어쓰며 프로필은 도메인(또는 기본 완전)을 따릅니다. 프로필 선택은 즉시 도메인에 저장됩니다.';
+  } else if (!presetState.hasMatchedEntry) {
+    elements.presetHint.textContent = '완전(기본): 모든 차단 해제. 안전: 드래그/드롭·오버레이 제거 최소화. 업로드 보호: 드롭존 보존. 도메인 ON 후 프리셋을 선택하세요.';
+  } else {
+    elements.presetHint.textContent = presetState.displayPreset === SHARED.PRESET_SAFE
+      ? '안전 — 드래그/드롭·오버레이 제거 최소화 (사이트 호환성 우선)'
+      : presetState.displayPreset === SHARED.PRESET_UPLOAD_SAFE
+        ? '업로드 보호 — 드롭존 보존 (업로드 사이트 호환성)'
+        : '완전 — 모든 차단 해제 (기본)';
+  }
+  elements.effectiveSource.textContent = computeEffectiveSourceText(
+    presetState.source, presetState.displayPreset, presetState.isPopupPreset, presetState.hasMatchedEntry, SHARED
+  );
+
   // ---- Session button ----
   elements.sessionButton.disabled = !state.sessionAvailable;
   elements.sessionButton.classList.toggle('is-active', state.sessionActive);
+  elements.sessionButton.setAttribute('aria-pressed', String(state.sessionActive));
   elements.sessionButton.textContent = state.sessionActive
     ? '세션 활성화 중 — 클릭하여 끄기'
     : '이번 세션만 임시 활성화';
@@ -286,10 +355,411 @@ function render() {
   }
 
   // ---- OCR button visibility (v0.8.0) ----
-  if (elements.ocrButton) {
-    const supportsOffscreen = typeof chrome !== 'undefined' && (typeof chrome.offscreen !== 'undefined' || typeof chrome.runtime?.getContexts === 'function');
-    elements.ocrButton.style.display = supportsOffscreen ? 'flex' : 'none';
+  const supportsOffscreen = typeof chrome !== 'undefined' && typeof chrome.offscreen !== 'undefined';
+  elements.ocrButton.style.display = supportsOffscreen ? 'flex' : 'none';
+
+  // ---- MAIN-world reload notice (v0.9.0, task 2.3) ----
+  // MAIN-world prototype patches run unconditionally at document_start
+  // and cannot be removed mid-page-life. When the user toggles OFF or
+  // switches to a profile that does not want MAIN-level unblocking,
+  // the ISOLATED-world teardown is immediate but the MAIN patches
+  // persist for the current page lifetime and are installed again on
+  // reload while the extension remains enabled. This notice
+  // communicates that limitation honestly and never promises immediate
+  // full restoration or reload-alone unpatching.
+  renderMainWorldNotice();
+}
+
+function renderMainWorldNotice() {
+  const notice = elements.mainWorldNotice;
+  if (!notice) return;
+
+  const result = computeMainWorldNotice(state, SHARED.MODE_LITE);
+  notice.textContent = result.text;
+  if (result.visible) {
+    notice.classList.remove('is-hidden');
+  } else {
+    notice.classList.add('is-hidden');
   }
+}
+
+function computeMainWorldNotice(state, modeLite) {
+  if (!state.hostname) {
+    return { text: '', visible: false };
+  }
+  if (!state.effectiveEnabled) {
+    return {
+      text: 'ISOLATED 차단 해제(CSS, 캡처 차단)는 즉시 꺼집니다. MAIN-world 프로토타입 패치는 확장이 켜져 있는 한 새로고침해도 다시 적용됩니다. 완전한 차단 복원은 확장을 비활성화하고 탭을 새로고침해야 합니다.',
+      visible: true
+    };
+  }
+  if (state.effectiveMode === modeLite) {
+    return {
+      text: 'Lite 모드 전환은 ISOLATED 기능(CSS, 캡처 차단)에 즉시 적용됩니다. MAIN-world 프로토타입 패치는 확장이 켜져 있는 한 새로고침해도 유지됩니다.',
+      visible: true
+    };
+  }
+  return { text: '', visible: false };
+}
+
+// ---- v0.9.1 task 2.4: preset pure helpers ----
+// These functions are extracted as pure helpers so they can be unit
+// tested via the VM harness without a DOM. They take a plain state
+// object and the SHARED module, and return plain data — no side
+// effects, no DOM access, no chrome.* calls.
+
+// Classifies a parsed preset id for popup display. Returns:
+//   { displayPreset, isPopupPreset }
+// displayPreset is one of the three popup-selectable ids when the
+// parsed preset is one of them. For options-only presets
+// (selection, media-safe, custom) displayPreset is null and
+// isPopupPreset is false — the popup must NOT highlight any of the
+// three radio buttons in that case, and must show an honest
+// "advanced/custom" hint instead.
+function classifyPreset(parsedPreset, SHARED) {
+  if (
+    parsedPreset === SHARED.PRESET_SAFE
+    || parsedPreset === SHARED.PRESET_COMPLETE
+    || parsedPreset === SHARED.PRESET_UPLOAD_SAFE
+  ) {
+    return { displayPreset: parsedPreset, isPopupPreset: true };
+  }
+  return { displayPreset: null, isPopupPreset: false };
+}
+
+// Computes the effective preset state for the popup view. Profile
+// derivation uses state.matchedKey (which may be a parent domain)
+// and state.domainSettings[matchedKey] — NOT state.domainEntry
+// (which is exact-host only). This keeps the popup's displayed
+// profile in lockstep with the content script, which resolves the
+// same matched key. Source precedence: session > domain > global.
+// Session overrides enabled only; the profile always comes from the
+// matched domain entry or the canonical default-complete.
+// canSelect is always true when a hostname exists — session does NOT
+// disable preset editing because the profile continues to govern
+// the tab regardless of the session enabled-override.
+function computePresetState(state, SHARED) {
+  if (!state.hostname) {
+    return {
+      displayPreset: SHARED.PRESET_COMPLETE,
+      isPopupPreset: true,
+      source: 'global',
+      hasMatchedEntry: false,
+      matchedKey: null,
+      canSelect: false
+    };
+  }
+
+  const matchedKey = state.matchedKey || null;
+  const matchedEntry = matchedKey && state.domainSettings
+    ? state.domainSettings[matchedKey]
+    : null;
+  const hasMatchedEntry = matchedEntry !== null && matchedEntry !== undefined;
+
+  const source = state.sessionActive
+    ? 'session'
+    : hasMatchedEntry
+      ? 'domain'
+      : 'global';
+
+  let displayPreset = SHARED.PRESET_COMPLETE;
+  let isPopupPreset = true;
+  if (hasMatchedEntry) {
+    const parsed = SHARED.parseDomainSetting(matchedEntry);
+    const classified = classifyPreset(parsed.preset, SHARED);
+    displayPreset = classified.displayPreset;
+    isPopupPreset = classified.isPopupPreset;
+    if (!isPopupPreset) {
+      displayPreset = parsed.preset;
+    }
+  }
+
+  return {
+    displayPreset,
+    isPopupPreset,
+    source,
+    hasMatchedEntry,
+    matchedKey,
+    canSelect: true
+  };
+}
+
+// Computes the domain entry to write when the user selects a preset.
+// The entry is a full canonical normalized snapshot: { enabled, mode,
+// preset, features }. We run the result through parseDomainSetting
+// to derive the canonical features map from PRESET_FEATURES, so the
+// stored entry contains all 9 feature booleans. If no domain entry
+// exists, creates one with enabled=true and default mode. If an
+// entry exists, preserves its enabled flag and mode.
+function computePresetEntry(currentDomainEntry, presetId, SHARED) {
+  const parsed = SHARED.parseDomainSetting(currentDomainEntry);
+  const enabled = currentDomainEntry === null ? true : parsed.enabled;
+  const mode = currentDomainEntry === null ? SHARED.DEFAULT_MODE : parsed.mode;
+  const raw = { enabled, mode, preset: presetId };
+  const normalized = SHARED.parseDomainSetting(raw);
+  return { enabled: normalized.enabled, mode: normalized.mode, preset: normalized.preset, features: normalized.features };
+}
+
+// Computes the domain entry to write when the user toggles enabled
+// or selects a mode. Preserves the existing preset and features from
+// the matched entry (parent or exact) so the profile is NOT silently
+// reset. If creating a new exact-host shadow from inherited parent
+// state, preserves the parent's preset and features.
+function computeProfilePreservingEntry(currentDomainEntry, overrides, SHARED) {
+  const parsed = SHARED.parseDomainSetting(currentDomainEntry);
+  const enabled = Object.prototype.hasOwnProperty.call(overrides, 'enabled')
+    ? overrides.enabled
+    : (currentDomainEntry === null ? true : parsed.enabled);
+  const mode = Object.prototype.hasOwnProperty.call(overrides, 'mode')
+    ? overrides.mode
+    : (currentDomainEntry === null ? SHARED.DEFAULT_MODE : parsed.mode);
+  const raw = { enabled, mode, preset: parsed.preset, features: parsed.features };
+  const normalized = SHARED.parseDomainSetting(raw);
+  return { enabled: normalized.enabled, mode: normalized.mode, preset: normalized.preset, features: normalized.features };
+}
+
+// Renders the effective-source line text. Session active means the
+// profile still comes from the matched domain (or default complete),
+// but enabled is overridden by the session — the wording must make
+// that distinction clear so the user does not think the preset
+// selection is in effect.
+function computeEffectiveSourceText(source, displayPreset, isPopupPreset, hasMatchedEntry, SHARED) {
+  const presetLabel = isPopupPreset
+    ? presetLabelKorean(displayPreset)
+    : advancedPresetLabelKorean(displayPreset);
+  if (source === 'session') {
+    const profileOrigin = hasMatchedEntry ? '도메인 설정' : '기본값';
+    return `활성 출처: 세션(활성화만) · 프로필: ${profileOrigin} (${presetLabel})`;
+  }
+  if (source === 'domain') {
+    return `활성 출처: 도메인 · 프로필: ${presetLabel}`;
+  }
+  return `활성 출처: 전역(기본) · 프로필: ${presetLabel}`;
+}
+
+function presetLabelKorean(presetId) {
+  switch (presetId) {
+    case 'safe': return '안전';
+    case 'complete': return '완전';
+    case 'upload-safe': return '업로드 보호';
+    default: return '완전';
+  }
+}
+
+function advancedPresetLabelKorean(presetId) {
+  switch (presetId) {
+    case 'selection': return '선택 (고급)';
+    case 'media-safe': return '미디어 보호 (고급)';
+    case 'custom': return '사용자 정의 (고급)';
+    default: return '고급';
+  }
+}
+
+// Computes the tabindex value for a preset button. The active popup
+// preset gets tabindex=0 (roving tabindex focus anchor). When no
+// popup preset is active (options-only profile), the Complete button
+// gets tabindex=0 as a focus anchor so the radiogroup remains
+// Tab-reachable — aria-checked stays false and .is-active is not set.
+// Disabled buttons always get tabindex=-1.
+function computePresetTabindex(buttonId, isActive, isPopupPreset, canSelect, SHARED) {
+  if (!canSelect) return -1;
+  if (isActive) return 0;
+  if (!isPopupPreset && buttonId === SHARED.PRESET_COMPLETE) return 0;
+  return -1;
+}
+
+// Resolves the preset id to start keyboard navigation from. Priority:
+// 1. The radio that actually received the keydown (currentTarget) —
+//    a pointer-clicked or programmatically focused tabindex=-1 radio
+//    can receive keydown before the async render cycle updates tabindex.
+// 2. The button with tabindex=0 (the roving-tabindex focus anchor).
+// 3. The button with .is-active (the aria-checked radio).
+// 4. PRESET_COMPLETE (the default/center fallback).
+// Each entry in buttons is { el, id }. The focusedEl is event.currentTarget.
+function resolveCurrentPreset(focusedEl, buttons, KB) {
+  if (focusedEl) {
+    const focused = buttons.find(({ el }) => el === focusedEl);
+    if (focused) return focused.id;
+  }
+  const anchor = buttons.find(({ el }) => el.getAttribute('tabindex') === '0');
+  if (anchor) return anchor.id;
+  const active = buttons.find(({ el }) => el.classList.contains('is-active'));
+  if (active) return active.id;
+  return KB.PRESET_COMPLETE;
+}
+
+// ---- v0.9.1 task 2.6: privacy-safe local diagnostic report ----
+// The DOM bridge is shared with the page, so treat every value read from it
+// as untrusted. The serializer creates new allowlisted objects only; it never
+// spreads or stringifies the bridge object itself.
+const DIAGNOSTIC_ATTRIBUTE_COUNTER_KEYS = Object.freeze([
+  'oncontextmenu', 'onselectstart', 'oncopy', 'oncut', 'onpaste',
+  'ondragstart', 'ondragover', 'ondrop'
+]);
+const DIAGNOSTIC_EVENT_COUNTER_KEYS = Object.freeze([
+  'contextmenu', 'selectstart', 'copy', 'cut', 'paste', 'dragstart',
+  'dragover', 'drop', 'mousedown', 'mouseup', 'keydown'
+]);
+const DIAGNOSTIC_SOURCES = Object.freeze(['initial', 'session', 'domain', 'global']);
+
+function isSafeDiagnosticHostname(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && !/[/?#:@\\]/.test(value);
+}
+
+async function requestDiagnosticBridge(chromeApi) {
+  try {
+    const [tab] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+    if (!tab || typeof tab.id !== 'number') {
+      return { ok: false, reason: '현재 탭을 확인할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.' };
+    }
+    const response = await chromeApi.tabs.sendMessage(tab.id, { type: 'rcow:readDiagnosticStats' });
+    if (!response || response.ok !== true || !response.stats || typeof response.stats !== 'object' || Array.isArray(response.stats)) {
+      return {
+        ok: false,
+        reason: response && typeof response.reason === 'string'
+          ? response.reason
+          : '현재 탭에서 진단 브리지를 찾을 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'
+      };
+    }
+    return { ok: true, stats: response.stats };
+  } catch (_) {
+    return { ok: false, reason: '현재 탭에서 진단 브리지를 찾을 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.' };
+  }
+}
+
+function copyAllowedCounters(source, keys) {
+  const result = {};
+  for (const key of keys) {
+    let value;
+    try {
+      value = source && typeof source === 'object' ? source[key] : undefined;
+    } catch (_) {
+      value = undefined;
+    }
+    result[key] = Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+  }
+  return result;
+}
+
+function copySafeFeatureMap(stats, SHARED) {
+  let featureMap = {};
+  try {
+    featureMap = stats && stats.features && typeof stats.features === 'object'
+      ? stats.features
+      : {};
+  } catch (_) {
+    featureMap = {};
+  }
+  const enabledFeatures = [];
+  for (const key of SHARED.FEATURE_KEYS) {
+    try {
+      if (featureMap[key] === true) {
+        enabledFeatures.push(key);
+      }
+    } catch (_) {}
+  }
+  return enabledFeatures;
+}
+
+function readDiagnosticValue(source, key) {
+  try {
+    return source && typeof source === 'object' ? source[key] : undefined;
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function serializeDiagnosticReport(input, SHARED) {
+  const stats = input && input.stats && typeof input.stats === 'object' ? input.stats : {};
+  const safeHostname = isSafeDiagnosticHostname(input && input.hostname) ? input.hostname : null;
+  const safeMatchedDomain = isSafeDiagnosticHostname(input && input.matchedDomain)
+    ? input.matchedDomain
+    : null;
+  const enabledFeatures = copySafeFeatureMap(stats, SHARED);
+  let resolveSource = null;
+  let modeValue = null;
+  let presetValue = null;
+  resolveSource = readDiagnosticValue(stats, 'resolveSource');
+  modeValue = readDiagnosticValue(stats, 'mode');
+  presetValue = readDiagnosticValue(stats, 'preset');
+  const source = DIAGNOSTIC_SOURCES.includes(resolveSource) ? resolveSource : 'unknown';
+  const mode = modeValue === SHARED.MODE_LITE || modeValue === SHARED.MODE_ULTIMATE
+    ? modeValue
+    : 'unknown';
+  const presetIds = [
+    SHARED.PRESET_SAFE,
+    SHARED.PRESET_SELECTION,
+    SHARED.PRESET_COMPLETE,
+    SHARED.PRESET_UPLOAD_SAFE,
+    SHARED.PRESET_MEDIA_SAFE,
+    SHARED.PRESET_CUSTOM
+  ];
+  const preset = presetIds.includes(presetValue) ? presetValue : 'unknown';
+
+  return {
+    version: typeof input.version === 'string' ? input.version : 'unknown',
+    hostname: safeHostname,
+    resolutionSource: source,
+    matchedDomain: safeMatchedDomain,
+    mode,
+    preset,
+    enabledFeatures,
+    counters: {
+      attributeRemovals: copyAllowedCounters(readDiagnosticValue(stats, 'attributeRemovals'), DIAGNOSTIC_ATTRIBUTE_COUNTER_KEYS),
+      eventInterceptions: copyAllowedCounters(readDiagnosticValue(stats, 'eventInterceptions'), DIAGNOSTIC_EVENT_COUNTER_KEYS),
+      overlaysNeutralized: copyAllowedCounters({ overlaysNeutralized: readDiagnosticValue(stats, 'overlaysNeutralized') }, ['overlaysNeutralized']).overlaysNeutralized,
+      shadowRootsScanned: copyAllowedCounters({ shadowRootsScanned: readDiagnosticValue(stats, 'shadowRootsScanned') }, ['shadowRootsScanned']).shadowRootsScanned,
+      periodicRescans: copyAllowedCounters({ periodicRescans: readDiagnosticValue(stats, 'periodicRescans') }, ['periodicRescans']).periodicRescans
+    }
+  };
+}
+
+function showDiagnosticStatus(text, kind) {
+  elements.diagnosticStatus.textContent = text;
+  elements.diagnosticStatus.classList.remove('is-hidden', 'is-error', 'is-success');
+  elements.diagnosticStatus.classList.add(kind === 'success' ? 'is-success' : 'is-error');
+}
+
+async function copyDiagnosticReport({ chromeApi, clipboard, version, hostname, matchedDomain, SHARED, onStatus }) {
+  const bridge = await requestDiagnosticBridge(chromeApi);
+  if (!bridge.ok) {
+    onStatus(bridge.reason, 'error');
+    return false;
+  }
+  let report;
+  try {
+    report = serializeDiagnosticReport({
+      version,
+      hostname,
+      matchedDomain,
+      stats: bridge.stats
+    }, SHARED);
+  } catch (_) {
+    onStatus('진단 보고서를 안전하게 생성하지 못했습니다. 현재 페이지를 새로고침한 뒤 다시 시도하세요.', 'error');
+    return false;
+  }
+  try {
+    await clipboard.writeText(JSON.stringify(report, null, 2));
+    onStatus('개인정보를 제외한 로컬 진단 보고서를 클립보드에 복사했습니다.', 'success');
+    return true;
+  } catch (_) {
+    onStatus('진단 보고서를 클립보드에 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인한 뒤 다시 시도하세요.', 'error');
+    return false;
+  }
+}
+
+function handleCopyDiagnosticReport() {
+  return copyDiagnosticReport({
+    chromeApi: chrome,
+    clipboard: navigator.clipboard,
+    version: chrome.runtime.getManifest().version,
+    hostname: state.hostname,
+    matchedDomain: state.matchedKey,
+    SHARED,
+    onStatus: showDiagnosticStatus
+  });
 }
 
 async function handleGlobalToggle() {
@@ -307,13 +777,16 @@ async function handleDomainToggle() {
     return;
   }
   // The button reflects "what would happen if session were not
-  // active". Flipping it writes an explicit domain entry. v0.5.0:
-  // the entry shape is { enabled, mode }; we preserve the existing
-  // mode (or default) when toggling enabled.
+  // active". Flipping it writes an explicit domain entry that
+  // preserves the existing preset/features from the matched entry
+  // (parent or exact) so the profile is NOT silently reset.
   const currentDomainDecision = domainDecisionIgnoringSession();
   const nextEnabled = !currentDomainDecision;
-  const preservedMode = state.domainMode || SHARED.DEFAULT_MODE;
-  await writeDomainSettings({ [state.hostname]: { enabled: nextEnabled, mode: preservedMode } });
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const entry = computeProfilePreservingEntry(matchedEntry, { enabled: nextEnabled }, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
 }
 
 async function handleModeSelect(mode) {
@@ -323,26 +796,49 @@ async function handleModeSelect(mode) {
   if (mode !== SHARED.MODE_LITE && mode !== SHARED.MODE_ULTIMATE) {
     return;
   }
-  // v0.5.0: writing a mode persists it to the domainSettings entry.
-  // If no domain entry exists, we create one with enabled=true and
-  // the chosen mode so the user's choice is honored on reload.
-  // If a domain entry exists, we keep its enabled flag and only
-  // change mode.
-  const parsed = SHARED.parseDomainSetting(state.domainEntry);
-  const enabled = state.domainEntry === null ? true : parsed.enabled;
-  await writeDomainSettings({ [state.hostname]: { enabled, mode } });
+  // Writing a mode persists it to the domainSettings entry. We
+  // preserve the existing preset/features from the matched entry
+  // (parent or exact) so changing mode does NOT silently reset the
+  // profile. If no domain entry exists, we create one with
+  // enabled=true and the chosen mode.
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const entry = computeProfilePreservingEntry(matchedEntry, { mode }, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
+}
+
+async function handlePresetSelect(presetId) {
+  if (!state.hostname) {
+    return;
+  }
+  if (
+    presetId !== SHARED.PRESET_SAFE
+    && presetId !== SHARED.PRESET_COMPLETE
+    && presetId !== SHARED.PRESET_UPLOAD_SAFE
+  ) {
+    return;
+  }
+  // Session does NOT block preset selection — session overrides
+  // enabled only, while the profile continues to govern the tab.
+  // The write target is the exact-host entry (state.domainEntry),
+  // not the matched parent, so selecting a preset creates or
+  // updates the exact-host shadow.
+  const entry = computePresetEntry(state.domainEntry, presetId, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
 }
 
 // Read-modify-write helper. Re-reads from storage before writing
 // so concurrent clicks (or a faster popup instance) cannot lose
-// sibling updates to other hostnames. Coalesces via an in-flight
-// promise so back-to-back clicks see the latest persisted state.
-let writeDomainSettingsPromise = null;
-async function writeDomainSettings(patch) {
-  if (writeDomainSettingsPromise) {
-    await writeDomainSettingsPromise.catch(() => {});
-  }
-  writeDomainSettingsPromise = (async () => {
+// sibling updates to other hostnames. Uses a promise-tail queue:
+// each call chains onto the tail of the previous write, so writes
+// execute strictly in call order even when storage reads/writes
+// yield asynchronously. The tail reference is never overwritten by
+// concurrent callers — each caller captures the current tail and
+// chains its own write after it resolves.
+let writeDomainSettingsTail = Promise.resolve();
+function writeDomainSettings(patch) {
+  writeDomainSettingsTail = writeDomainSettingsTail.then(async () => {
     try {
       const fresh = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
       const merged = (fresh && fresh.domainSettings) || state.domainSettings;
@@ -352,12 +848,8 @@ async function writeDomainSettings(patch) {
     } catch (err) {
       console.error('[Right-click on Web] failed to persist domain settings', err);
     }
-  })();
-  try {
-    await writeDomainSettingsPromise;
-  } finally {
-    writeDomainSettingsPromise = null;
-  }
+  });
+  return writeDomainSettingsTail;
 }
 
 async function handleSessionToggle() {
@@ -418,7 +910,11 @@ elements.toggleButton.addEventListener('click', handleGlobalToggle);
 elements.domainToggle.addEventListener('click', handleDomainToggle);
 elements.modeLite.addEventListener('click', () => handleModeSelect(SHARED.MODE_LITE));
 elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MODE_ULTIMATE));
+elements.presetSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_SAFE));
+elements.presetComplete.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_COMPLETE));
+elements.presetUploadSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_UPLOAD_SAFE));
 elements.sessionButton.addEventListener('click', handleSessionToggle);
+elements.copyDiagnosticButton.addEventListener('click', handleCopyDiagnosticReport);
 if (elements.ocrButton) {
   elements.ocrButton.addEventListener('click', handleTriggerOcr);
 }
@@ -426,6 +922,74 @@ elements.openOptionsButton.addEventListener('click', handleOpenOptions);
 if (elements.openSidePanelButton) {
   elements.openSidePanelButton.addEventListener('click', handleOpenSidePanel);
 }
+
+// ---- Keyboard radiogroup for mode toggle (roving tabindex) ----
+const KB = globalThis.RIGHT_CLICK_ON_WEB_KEYBOARD_UTILS;
+const hasKeyboardUtils = Boolean(
+  KB
+  && typeof KB.getNextModeFromKeydown === 'function'
+  && typeof KB.getNextPresetFromKeydown === 'function'
+);
+if (!hasKeyboardUtils) {
+  console.warn('[Right-click on Web] keyboard-utils unavailable; arrow-key navigation disabled');
+}
+
+function handleModeKeydown(event) {
+  if (!hasKeyboardUtils) return;
+  const lite = elements.modeLite;
+  const ultimate = elements.modeUltimate;
+  if (!lite || !ultimate) return;
+  if (lite.disabled && ultimate.disabled) return;
+
+  const isLiteActive = lite.classList.contains('is-active');
+  const active = isLiteActive ? lite : ultimate;
+  const nextMode = KB.getNextModeFromKeydown(isLiteActive ? KB.MODE_LITE : KB.MODE_ULTIMATE, event.key);
+  if (!nextMode) return;
+
+  event.preventDefault();
+  const next = nextMode === KB.MODE_LITE ? lite : ultimate;
+  if (active) {
+    active.setAttribute('tabindex', '-1');
+  }
+  next.setAttribute('tabindex', '0');
+  next.focus();
+  handleModeSelect(nextMode);
+}
+
+elements.modeLite.addEventListener('keydown', handleModeKeydown);
+elements.modeUltimate.addEventListener('keydown', handleModeKeydown);
+
+// ---- Keyboard radiogroup for preset toggle (roving tabindex) ----
+function handlePresetKeydown(event) {
+  if (!hasKeyboardUtils) return;
+  const buttons = [
+    { el: elements.presetSafe, id: KB.PRESET_SAFE },
+    { el: elements.presetComplete, id: KB.PRESET_COMPLETE },
+    { el: elements.presetUploadSafe, id: KB.PRESET_UPLOAD_SAFE }
+  ];
+  if (buttons.every(({ el }) => el.disabled)) return;
+
+  const currentPreset = resolveCurrentPreset(event.currentTarget, buttons, KB);
+  const nextPreset = KB.getNextPresetFromKeydown(currentPreset, event.key);
+  if (!nextPreset) return;
+
+  event.preventDefault();
+  const next = buttons.find(({ id }) => id === nextPreset);
+  if (!next) return;
+  // Clear the old focus anchor's tabindex so only one Tab entry
+  // point remains after navigation.
+  const oldAnchor = buttons.find(({ el }) => el.getAttribute('tabindex') === '0');
+  if (oldAnchor) {
+    oldAnchor.el.setAttribute('tabindex', '-1');
+  }
+  next.el.setAttribute('tabindex', '0');
+  next.el.focus();
+  handlePresetSelect(nextPreset);
+}
+
+elements.presetSafe.addEventListener('keydown', handlePresetKeydown);
+elements.presetComplete.addEventListener('keydown', handlePresetKeydown);
+elements.presetUploadSafe.addEventListener('keydown', handlePresetKeydown);
 
 // Re-render whenever storage changes — covers both same-tab updates
 // and the rare case where another popup instance wrote first.
@@ -463,3 +1027,23 @@ loadState().then(render).catch(() => {
   // First-load failure shouldn't break the popup; show fallback state.
   render();
 });
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    computeMainWorldNotice,
+    classifyPreset,
+    computePresetState,
+    computePresetEntry,
+    computeProfilePreservingEntry,
+    computeEffectiveSourceText,
+    computePresetTabindex,
+    resolveCurrentPreset,
+    presetLabelKorean,
+    advancedPresetLabelKorean,
+    requestDiagnosticBridge,
+    copyAllowedCounters,
+    copySafeFeatureMap,
+    serializeDiagnosticReport,
+    copyDiagnosticReport
+  };
+}

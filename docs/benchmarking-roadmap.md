@@ -7,6 +7,8 @@
 - 랜딩 페이지: https://ultimate-enable-right-click.github.io/
 - Chrome 웹스토어: https://chromewebstore.google.com/detail/emfeppdfcjnldjgmofdkbggeacapegen
 
+> **v0.10.0 문서 정합성 메모 (2026-08-15):** 이미지 OCR, 선택형 로컬 OCR 기록, 마지막 영역 반복의 자동 구현·검증은 완료되었다. 화면 픽셀은 로컬 OCR 처리 중 메모리에만 일시적으로 존재하며 저장·전송하지 않는다. OCR 기록은 기본 OFF이고 opt-in 시 최종 텍스트와 제한 메타데이터만 `chrome.storage.local`에 최대 20개·30일·64 KiB로 저장하며 동기화하지 않는다. 마지막 영역 반복은 `chrome.storage.session`의 제한된 geometry/context metadata만 사용하고, 조건을 검증한 뒤 새 화면을 캡처한다. 실제 unpacked Chrome 수동 QA는 별도 배포 게이트로 남는다.
+
 ---
 
 ## 1. 경쟁 확장 프로그램 분석

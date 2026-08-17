@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="utf-8">
@@ -16,13 +16,109 @@
         <p class="options-help side-panel-hint is-hidden">이 화면은 Chrome 사이드 패널에서도 그대로 표시됩니다. 페이지와 동시에 열어 두고 사이트를 관리해 보세요.</p>
       </header>
 
-      <section class="status-card options-global" aria-live="polite">
+      <section class="status-card options-global" aria-live="polite" aria-atomic="true">
         <div>
           <p class="label">전역 상태</p>
           <p id="globalStatus" class="status-text">상태 확인 중</p>
           <p class="options-help">도메인별 또는 세션 설정이 없을 때 적용되는 기본값입니다.</p>
         </div>
         <button id="globalToggle" class="toggle-button" type="button" aria-pressed="true">ON</button>
+      </section>
+
+      <section id="ocrResultPanel" class="options-section ocr-result-panel" aria-labelledby="ocrResultTitle" aria-live="polite" aria-atomic="true">
+        <div class="section-heading">
+          <div>
+            <p class="label">현재 브라우저 세션</p>
+            <h2 id="ocrResultTitle">OCR 결과 편집</h2>
+          </div>
+          <p id="ocrResultStatus" class="ocr-result-status" role="status" aria-live="polite" aria-atomic="true">불러오는 중</p>
+        </div>
+        <p id="ocrResultMeta" class="options-help">OCR 결과를 확인하고 있습니다.</p>
+        <p id="ocrSourceNotice" class="ocr-source-notice is-hidden" role="note" aria-live="polite"></p>
+
+        <div id="ocrEditArea" class="ocr-edit-area is-hidden">
+          <div id="ocrNewResultBanner" class="ocr-new-result-banner is-hidden">
+            <span>새 OCR 결과를 받았습니다.</span>
+            <button id="ocrAcceptNewBtn" class="ocr-accept-new-btn" type="button">새 결과로 교체</button>
+            <button id="ocrDismissBannerBtn" class="ocr-dismiss-banner-btn" type="button" aria-label="닫기">×</button>
+          </div>
+
+          <div id="ocrConfidenceRow" class="ocr-confidence-row">
+            <span id="ocrConfidenceLabel" class="ocr-confidence-label">
+              <span id="ocrConfidenceValue" class="ocr-confidence-value">신뢰도 --%</span>
+              <span id="ocrConfidenceWarning" class="ocr-confidence-warning is-hidden">낮은 신뢰도</span>
+            </span>
+            <span id="ocrCropSize" class="ocr-crop-size"></span>
+          </div>
+
+          <div id="ocrOriginalSection" class="ocr-original-section">
+            <p class="ocr-section-label">원본 텍스트</p>
+            <pre id="ocrOriginalText" class="ocr-original-text"></pre>
+          </div>
+
+          <div class="ocr-edited-section">
+            <p class="ocr-section-label">
+              편집한 텍스트
+              <span id="ocrEditDirty" class="ocr-edit-dirty is-hidden"> (수정됨)</span>
+            </p>
+            <textarea id="ocrEditedText" class="ocr-edited-text" rows="5" placeholder="OCR 결과가 여기에 표시됩니다. 수정이 가능합니다."></textarea>
+          </div>
+
+          <div class="ocr-actions">
+            <button id="ocrCopyBtn" class="ocr-action-btn" type="button">
+              <span class="ocr-action-icon">📋</span> 복사
+            </button>
+            <button id="ocrSelectAllBtn" class="ocr-action-btn" type="button">
+              <span class="ocr-action-icon">☑</span> 전체 선택
+            </button>
+            <button id="ocrCleanupBtn" class="ocr-action-btn" type="button">
+              <span class="ocr-action-icon">🧹</span> 공백 정리
+            </button>
+            <button id="ocrRestoreBtn" class="ocr-action-btn" type="button">
+              <span class="ocr-action-icon">↩</span> 원본 복원
+            </button>
+          </div>
+
+          <div id="ocrRerunSection" class="ocr-rerun-section">
+            <button id="ocrRerunBtn" class="ocr-action-btn ocr-rerun-btn" type="button" disabled title="마지막 수동 영역을 새로 캡처하여 다시 인식합니다.">
+              <span class="ocr-action-icon">🔄</span> 마지막 영역 다시 인식
+            </button>
+            <p id="ocrRerunNote" class="ocr-rerun-note">마지막 수동 영역 OCR이 있으면 같은 탭과 화면 크기에서 새 캡처로 다시 인식합니다.</p>
+          </div>
+
+          <div class="ocr-history-save-row">
+            <button id="ocrHistorySaveBtn" class="ocr-action-btn" type="button">현재 편집본 기록</button>
+            <p id="ocrHistorySaveNote" class="ocr-rerun-note">기록은 기본적으로 꺼져 있으며, 저장 시 현재 편집본만 이 기기에 최대 20개, 30일까지 보관합니다. 원본 OCR 결과는 자동 저장하지 않습니다.</p>
+          </div>
+
+          <p id="ocrCopyToast" class="ocr-copy-toast" role="status" aria-live="polite"></p>
+        </div>
+
+        <div id="ocrEmptyState">
+          <pre id="ocrResultText" class="ocr-result-text">아직 성공한 OCR 결과가 없습니다.</pre>
+          <p class="options-help">성공한 텍스트와 안전한 처리 메타데이터만 브라우저 종료 전까지 임시 보관합니다.</p>
+        </div>
+      </section>
+
+      <section class="options-section ocr-history-section" aria-labelledby="ocrHistoryTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">로컬 OCR 기록</p>
+            <h2 id="ocrHistoryTitle">선택형 텍스트 기록</h2>
+          </div>
+          <button id="ocrHistoryToggle" class="toggle-button toggle-small" type="button" aria-pressed="false">OFF</button>
+        </div>
+        <p class="options-help">켜면 저장 버튼으로 선택한 최종 편집 텍스트와 도메인만 이 기기에 최대 20개, 30일 동안 보관합니다. 이미지, URL 경로, 원본 OCR 텍스트, 클립보드는 저장하지 않으며 동기화하지 않습니다.</p>
+        <div id="ocrHistoryControls" class="ocr-history-controls is-hidden">
+          <label class="ocr-history-search-label" for="ocrHistorySearch">기록 검색</label>
+          <input id="ocrHistorySearch" class="ocr-history-search" type="search" autocomplete="off" placeholder="텍스트 또는 도메인 검색">
+          <div class="ocr-history-actions">
+            <button id="ocrHistoryDeleteAllBtn" class="delete-button" type="button">기록 모두 삭제</button>
+            <button id="ocrHistoryDisableDeleteBtn" class="delete-button" type="button">끄고 기록 삭제</button>
+          </div>
+          <div id="ocrHistoryList" class="ocr-history-list"></div>
+        </div>
+        <p id="ocrHistoryStatus" class="site-row-status" role="status" aria-live="polite"></p>
       </section>
 
       <section class="options-section" aria-labelledby="sitesTitle">
@@ -34,7 +130,7 @@
           <p id="siteCount" class="site-count">0개</p>
         </div>
         <p class="options-help">상위 도메인 설정은 하위 도메인에도 적용됩니다. 삭제하면 해당 사이트는 전역 기본값을 다시 따릅니다.</p>
-        <div id="siteList" class="site-list" aria-live="polite"></div>
+        <div id="siteList" class="site-list" aria-live="polite" aria-atomic="true"></div>
       </section>
 
       <section class="options-section options-info" aria-labelledby="storageTitle">
@@ -55,14 +151,61 @@
         </div>
         <div class="site-row-actions">
           <div class="mode-toggle" role="radiogroup" aria-label="사이트 완화 모드">
-            <button class="mode-button site-mode-lite" type="button" role="radio" title="JS 차단만 완화 (사이트 UI 보존)">Lite</button>
-            <button class="mode-button site-mode-ultimate" type="button" role="radio" title="블록 지정 활성화 (CSS 드래그 강제 허용 + 완전 복사)">Ultimate</button>
+            <button class="mode-button site-mode-lite" type="button" role="radio" aria-checked="false" tabindex="-1" title="JS 차단만 완화 (사이트 UI 보존)">Lite</button>
+            <button class="mode-button site-mode-ultimate" type="button" role="radio" aria-checked="true" tabindex="0" title="블록 지정 활성화 (CSS 드래그 강제 허용 + 완전 복사)">Ultimate</button>
           </div>
           <button class="delete-button" type="button">설정 삭제</button>
         </div>
+        <div class="site-row-preset">
+          <label class="preset-select-label">
+            <span class="preset-select-text">프리셋</span>
+            <select class="site-preset-select" aria-label="사이트 호환성 프리셋">
+              <option value="safe">안전</option>
+              <option value="selection">선택 (고급)</option>
+              <option value="complete">완전</option>
+              <option value="upload-safe">업로드 보호</option>
+              <option value="media-safe">미디어 보호 (고급)</option>
+              <option value="custom" disabled>사용자 정의 (현재 상태 표시)</option>
+            </select>
+          </label>
+        </div>
+        <div class="site-row-advanced">
+          <button class="advanced-toggle-button" type="button" aria-expanded="false">고급 설정 펼치기</button>
+          <div class="site-row-advanced-panel is-hidden">
+            <fieldset class="feature-fieldset">
+              <legend>기능별 스위치 (9개)</legend>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="contextMenu"> 우클릭 메뉴 복원</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="selection"> 텍스트 선택</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="copyShortcuts"> 복사 단축키</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="dragStart"> 드래그 시작</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="dragDrop"> 드래그 드롭</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="overlayCleanup"> 오버레이 정리</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="printUnhide"> 인쇄 숨김 해제</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="shadowDom"> 섀도 DOM</label>
+              <label class="feature-checkbox-label"><input type="checkbox" class="feature-checkbox" data-feature="ultimateCss"> Ultimate CSS</label>
+            </fieldset>
+            <div class="preset-reset-row">
+              <label class="preset-reset-label">
+                <span class="preset-reset-text">되돌릴 프리셋</span>
+                <select class="site-preset-reset-select" aria-label="되돌릴 프리셋 선택">
+                  <option value="safe">안전</option>
+                  <option value="selection">선택 (고급)</option>
+                  <option value="complete">완전</option>
+                  <option value="upload-safe">업로드 보호</option>
+                  <option value="media-safe">미디어 보호 (고급)</option>
+                </select>
+              </label>
+              <button class="preset-reset-button" type="button">프리셋으로 되돌리기</button>
+            </div>
+          </div>
+        </div>
+        <p class="site-row-status" role="status" aria-live="polite"></p>
       </article>
     </template>
     <script src="shared.js"></script>
+    <script src="keyboard-utils.js"></script>
+    <script src="ocr-session-utils.js"></script>
+    <script src="ocr-history.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

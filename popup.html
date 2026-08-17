@@ -14,7 +14,7 @@
         <p class="subtitle">우클릭, 선택, 복사 방해를 일반적인 웹 상호작용으로 되돌립니다.</p>
       </section>
 
-      <section class="status-card" aria-live="polite">
+      <section class="status-card" aria-live="polite" aria-atomic="true">
         <div>
           <p class="label">현재 상태</p>
           <p id="statusText" class="status-text">상태 확인 중</p>
@@ -24,7 +24,7 @@
         </button>
       </section>
 
-      <section class="domain-card" aria-live="polite">
+      <section class="domain-card">
         <div class="domain-card-text">
           <p class="label">현재 사이트</p>
           <p id="domainText" class="domain-text">사이트 확인 중...</p>
@@ -35,28 +35,54 @@
         </button>
       </section>
 
-      <section class="mode-card" aria-live="polite">
+      <section class="mode-card" aria-live="polite" aria-atomic="true">
         <p class="label">완화 모드 (현재 사이트)</p>
         <div class="mode-toggle" role="radiogroup" aria-label="완화 모드">
-          <button id="modeLite" class="mode-button" type="button" role="radio" aria-checked="false" disabled>
+          <button id="modeLite" class="mode-button" type="button" role="radio" aria-checked="false" tabindex="-1" disabled>
             Lite
           </button>
-          <button id="modeUltimate" class="mode-button is-active" type="button" role="radio" aria-checked="true" disabled>
+          <button id="modeUltimate" class="mode-button is-active" type="button" role="radio" aria-checked="true" tabindex="0" disabled>
             Ultimate
           </button>
         </div>
         <p id="modeHint" class="mode-hint">Ultimate: 블록 지정 활성화 (CSS 드래그 강제 허용). Lite: JS 차단만 완화.</p>
       </section>
 
-      <button id="sessionButton" class="session-button" type="button" disabled>
+      <section class="preset-card">
+        <p class="label">사이트 호환성 (현재 사이트)</p>
+        <div class="preset-toggle" role="radiogroup" aria-label="사이트 호환성 프리셋">
+          <button id="presetSafe" class="preset-button" type="button" role="radio" aria-checked="false" tabindex="-1" disabled>
+            안전
+          </button>
+          <button id="presetComplete" class="preset-button is-active" type="button" role="radio" aria-checked="true" tabindex="0" disabled>
+            완전
+          </button>
+          <button id="presetUploadSafe" class="preset-button" type="button" role="radio" aria-checked="false" tabindex="-1" disabled>
+            업로드 보호
+          </button>
+        </div>
+        <p id="presetHint" class="preset-hint">완전(기본): 모든 차단 해제. 안전: 드래그/드롭·오버레이 제거 최소화. 업로드 보호: 드롭존 보존.</p>
+        <p id="effectiveSource" class="effective-source" role="status"></p>
+      </section>
+
+      <button id="sessionButton" class="session-button" type="button" aria-pressed="false" disabled>
         이번 세션만 임시 활성화
       </button>
 
-      <p id="sessionNotice" class="session-notice is-hidden" role="status" aria-live="polite"></p>
+      <p id="sessionNotice" class="session-notice is-hidden"></p>
 
-      <p id="syncUsage" class="sync-usage is-hidden"></p>
+       <p id="syncUsage" class="sync-usage is-hidden"></p>
 
-      <button id="ocrButton" class="ocr-button" type="button">
+       <section class="diagnostic-card" aria-label="로컬 진단 보고서">
+         <p class="label">로컬 진단 보고서</p>
+         <p class="diagnostic-hint">현재 사이트의 설정과 차단 완화 카운터, 그리고 호스트명만 복사합니다. 페이지 내용, URL 경로, OCR 결과는 포함하지 않습니다.</p>
+         <button id="copyDiagnosticButton" class="diagnostic-button" type="button">
+           진단 보고서 복사
+         </button>
+         <p id="diagnosticStatus" class="diagnostic-status is-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+       </section>
+
+       <button id="ocrButton" class="ocr-button" type="button">
         📷 화면 영역 텍스트 추출 (OCR)
       </button>
 
@@ -78,8 +104,11 @@
       </ul>
 
       <p class="notice">DRM 보호 미디어나 강한 iframe 격리에서는 동작하지 않을 수 있습니다. OCR은 100% 로컬 브라우저에서 안전하게 처리됩니다.</p>
+
+       <p id="mainWorldNotice" class="main-world-notice is-hidden"></p>
     </main>
     <script src="shared.js"></script>
+    <script src="keyboard-utils.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

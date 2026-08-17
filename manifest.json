@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "description": "Restores common right-click, text selection, copy, and drag interactions, and extracts text via local OCR on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
@@ -23,7 +23,7 @@
   },
   "background": {
     "service_worker": "background.js",
-    "scripts": ["shared.js", "background.js"]
+    "scripts": ["shared.js", "ocr-session-utils.js", "ocr-history.js", "toolbar-action-utils.js", "image-context.js", "background.js"]
   },
   "content_scripts": [
     {
@@ -37,6 +37,14 @@
     },
     {
       "matches": ["<all_urls>"],
+      "js": ["image-context.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": ["<all_urls>"],
       "js": ["shared.js", "content.js"],
       "run_at": "document_start",
       "all_frames": true,
@@ -45,7 +53,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["crop-overlay.js"],
+      "js": ["keyboard-utils.js", "crop-overlay.js"],
       "css": ["crop-overlay.css"],
       "run_at": "document_idle",
       "all_frames": false

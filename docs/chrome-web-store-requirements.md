@@ -9,12 +9,12 @@
 | 항목 | 현재 상태 | 비고 |
 |------|-----------|------|
 | **manifest 버전** | MV3 ✅ | |
-| **permissions** | `storage` ✅ | 사용자 설정만 저장 |
+| **permissions** | `storage`, `activeTab`, `contextMenus`, `sidePanel`, `offscreen` ✅ | 설정·사용자 요청 OCR·메뉴·사이드 패널·로컬 OCR |
 | **host_permissions** | `<all_urls>` ⚠️ | 모든 페이지에서 동작 위해 필요 (설명 문구 준비됨) |
 | **아이콘** | `icons/icon128.png`, `icons/icon512.png` ✅ | PIL 생성, 레드/블랙/골드 디자인 |
-| **스크린샷** | ❌ 미준비 | 스토어 등록 전 필요 (사용자 캡처) |
-| **개인정보처리방침** | 🔄 파일 작성 완료 (`docs/privacy-policy.html`) / 호스팅 URL 확보는 사용자 작업 | GitHub Pages 활성화 필요 |
-| **content script** | `content.js` + `content-main.js` ✅ | v0.2.0 듀얼 스크립트 (ISOLATED + MAIN world) |
+| **스크린샷** | 🔄 기존 제출용 이미지 있음 | v0.10.0 흐름을 담은 실제 unpacked Chrome 캡처는 별도 게이트 |
+| **개인정보처리방침** | ✅ 문서 갱신 | 공개 URL 접근성은 제출 전 확인 |
+| **content script** | MAIN/ISOLATED 및 이미지 context 엔트리 ✅ | 차단 완화와 사용자 요청 이미지 OCR 좌표 확인 |
 | **popup UI** | `popup.html/css/js` ✅ | |
 | **스토어 등록 정보** | ✅ 완료 (`docs/store-listing.md`) | 설명/카테고리/권한 사유/데이터 설문 복사본 |
 
@@ -32,17 +32,15 @@
 - `icons/icon512.png` — 512×512 PNG (스토어 권장)
 - 디자인: Rosso Corsa Red / Carbon Black / Gold Concentric Circles
 
-### 스크린샷 (미준비 ❌)
-- 최소 1장 이상 필요
+### 스크린샷
+- 기존 제출용 `assets/screenshots/test-page.png` 1장이 있습니다.
 - 권장 크기: **1280×800** 또는 **640×400** PNG
-- 팝업 UI 캡처 또는 확장 동작 시연 이미지
-- `tests/manual/blocked-page.html`을 브라우저에서 열어 캡처 가능
+- v0.10.0 OCR·기록·반복 흐름을 보여 주는 실제 unpacked Chrome 캡처는 별도 수동 QA 게이트에서 준비합니다.
 
-### 개인정보처리방침 URL (미준비 ❌)
-- 확장앱이 사용자 데이터 수집/외부 통신/로그인 처리 시 필수
-- 현재 확장: 원격 통신 없음, 사용자 데이터 수집 없음
-- 하지만 스토어 검토 시 "데이터 사용 관련 설문" 항목에 대응 필요
-- 대안: GitHub Pages나 자체 서버에 간단한 개인정보처리방침 페이지 호스팅
+### 개인정보처리방침 URL
+- 공개 개인정보처리방침 문서는 `docs/privacy-policy.html`에 갱신되어 있습니다.
+- 스토어 제출 전 공개 URL의 실제 접근 가능 여부를 별도로 확인합니다.
+- 데이터 사용 설문은 캡처 픽셀·OCR 텍스트의 외부 수집·전송이 없고 OCR 기록이 opt-in local-only임을 기준으로 작성합니다.
 
 ---
 
@@ -50,47 +48,53 @@
 
 ### 짧은 설명 (최대 50자)
 ```
-우클릭, 선택, 복사 방해를 일반 웹 상호작용으로 되돌립니다.
+막힌 웹 텍스트를 복구하고 선택 불가능한 화면 텍스트를 로컬 OCR로 추출합니다.
 ```
 
 ### 상세 설명 (HTML 허용)
 
 ```html
 <h2>Right-click on Web</h2>
-<p>우클릭, 텍스트 선택, 복사/잘라내기, 드래그 차단을 완화하는 크롬 확장 프로그램입니다.</p>
+<p>우클릭, 텍스트 선택, 복사/잘라내기, 드래그 차단을 완화하고 선택할 수 없는 보이는 텍스트를 기기 내 OCR로 추출하는 크롬 확장 프로그램입니다.</p>
 
 <h3>주요 기능</h3>
 <ul>
   <li>우클릭 메뉴 복원</li>
   <li>텍스트 선택 허용</li>
   <li>복사/잘라내기/드래그 차단 완화</li>
-  <li>팝업에서 ON/OFF 토글</li>
+  <li>팝업과 사이드 패널에서 ON/OFF 및 사이트 설정 관리</li>
+  <li>사용자 요청 화면 영역·이미지의 로컬 WASM OCR 텍스트 추출</li>
+  <li>기본 OFF인 선택형 로컬 OCR 기록과 같은 수동 영역 새 캡처 반복</li>
 </ul>
 
 <h3>제한 사항</h3>
-<p>모든 사이트에서 100% 동작을 보장하지 않습니다. DRM, 이미지/캔버스 텍스트, 강하게 격리된 iframe 등에서는 제한될 수 있습니다.</p>
+<p>모든 사이트에서 100% 동작을 보장하지 않습니다. DRM, 서버에서 제공하지 않는 텍스트, sandbox iframe, 현재 화면에 보이지 않는 콘텐츠에서는 제한될 수 있습니다.</p>
 
 <h3>권한 설명</h3>
-<p>이 확장은 <code>&lt;all_urls&gt;</code> 호스트 권한을 사용하여 모든 웹페이지에서 차단 스크립트를 완화합니다. 원격 서버에 데이터를 전송하거나 사용자 브라우징 데이터를 수집하지 않습니다.</p>
+<p>이 확장은 <code>&lt;all_urls&gt;</code> 호스트 권한을 사용하여 차단 스크립트를 완화하고 사용자가 요청한 이미지 OCR 좌표를 확인합니다. OCR은 로컬 WASM으로 실행되며 캡처 픽셀은 처리 중 메모리에만 존재합니다. 원격 전송, 원격 코드 로딩, 텔레메트리, 클라우드 OCR이 없습니다.</p>
 ```
 
 ---
 
-## 3) 권한 설명 전략 (host_permissions `<all_urls>`)
+## 3) 권한 설명 전략
 
 스토어 검토 시 "왜 전체 사이트 접근이 필요한지" 설명이 필요할 수 있습니다:
 
-> **필요 이유**: 우클릭/선택/복사 차단은 페이지의 인라인 스크립트나 CSS 속성으로 구현됩니다. 이를 완화하려면 모든 웹페이지에 Content Script가 주입되어야 합니다.
+> **`<all_urls>` 필요 이유**: 우클릭/선택/복사 차단은 페이지의 인라인 스크립트나 CSS 속성으로 구현됩니다. 이를 완화하고 사용자가 요청한 이미지 OCR의 가시 좌표를 확인하려면 모든 웹페이지에 Content Script가 주입되어야 합니다.
 >
-> **데이터 처리**: 이 확장은 원격 서버에 데이터를 전송하지 않으며, 사용자 브라우징 데이터나 입력 내용을 수집/저장하지 않습니다. 설정은 로컬 `chrome.storage`에만 저장됩니다.
+> **`storage`**: 설정, 기본 OFF인 opt-in 로컬 OCR 기록, 세션 상태에 사용합니다. OCR 기록은 최종 텍스트와 제한 메타데이터만 현재 기기에 최대 20개·30일·64 KiB로 저장하며 Chrome Sync에 포함하지 않습니다.
+>
+> **`activeTab`**: 사용자가 요청한 현재 탭의 hostname·가시 영역 확인 및 OCR 캡처에 사용합니다. **`contextMenus`**는 사용자 요청 메뉴, **`sidePanel`**은 설정·결과·기록 관리, **`offscreen`**은 확장 내부 로컬 WASM OCR 실행에 사용합니다.
+>
+> **데이터 처리**: 캡처 픽셀은 OCR 중 메모리에만 존재하며 저장·전송하지 않습니다. 원격 서버 전송, 원격 코드 로딩, 텔레메트리, 클라우드 OCR이 없습니다. 마지막 영역 반복은 세션 geometry만 보관하고, 조건 검증 후 새 화면을 캡처합니다.
 
 ---
 
 ## 4) 패키지 생성
 
 ```powershell
-# 이 명령을 repo 루트에서 실행 (content-main.js 포함 필수 — v0.2.0 듀얼 스크립트)
-Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,popup.html,popup.css,popup.js,icons -DestinationPath "right-click-on-web.zip" -Force
+# 이 명령을 repo 루트에서 실행 (manifest가 참조하는 모든 로컬 런타임 파일 포함)
+Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.0.zip" -Force
 ```
 
 **제외할 항목**: `.git`, `.serena`, `.omo`, `history`, `docs`, `tests`, `popup-preview.html`, `README.md`
@@ -100,16 +104,17 @@ Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,po
 ## 5) 제출 전 체크리스트
 
 - [x] Manifest V3 준수 (`manifest_version: 3`)
-- [x] 최소 권한 (`storage` + `<all_urls>`만 사용)
+- [x] manifest 권한·호스트 권한 설명 준비 (`storage`, `activeTab`, `contextMenus`, `sidePanel`, `offscreen`, `<all_urls>`)
 - [x] 아이콘 준비 (`icons/icon128.png`, `icons/icon512.png`)
 - [x] 듀얼 콘텐츠 스크립트 (`content.js` + `content-main.js`) — ZIP에 반드시 포함
 - [x] 개인정보처리방침 파일 작성 (`docs/privacy-policy.html`)
-- [ ] 개인정보처리방침 URL 확보 (GitHub Pages 활성화 — 사용자 작업)
-- [ ] 스크린샷 준비 (1장 이상 — 사용자 작업)
+- [ ] 개인정보처리방침 공개 URL 접근성 확인
+- [x] 기존 제출용 스크린샷 1장 확인 (`assets/screenshots/test-page.png`, 1280×800)
+- [ ] v0.10.0 OCR·기록·반복 흐름의 실제 unpacked Chrome 스크린샷 준비
 - [x] 스토어 설명/상세 설명 작성 (`docs/store-listing.md`)
 - [ ] ZIP 루트에 `manifest.json` 확인
-- [ ] 로컬 Load unpacked로 기능 테스트 완료 (최종 QA)
-- [ ] version 숫자 확인 (`0.2.0` → 출시 전 `1.0.0` 권장, 선택)
+- [ ] 실제 unpacked Chrome에서 v0.10.0 OCR·기록 opt-in·마지막 영역 반복 수동 QA 완료
+- [ ] manifest v0.10.0 출시 버전 확인
 
 ---
 
@@ -129,9 +134,9 @@ Compress-Archive -Path manifest.json,background.js,content.js,content-main.js,po
 
 ### 대략적인 순서
 
-1. **스크린샷 캡처** → `assets/screenshots/` 폴더에 저장
+1. **기존 제출용 스크린샷 확인** → `assets/screenshots/test-page.png` (1280×800); v0.10.0 흐름 스크린샷은 별도 수동 QA 게이트에서 캡처
 2. **개인정보처리방침** → GitHub Pages로 호스팅, URL 확보
 3. **스토어 설명** → Dashboard에 입력
-4. **manifest version** → `1.0.0`으로 변경
-5. **ZIP 패키지** → `right-click-on-web.zip` 생성
+4. **manifest version** → v0.10.0 출시 값 확인
+5. **ZIP 패키지** → `right-click-on-web-v0.10.0.zip` 생성
 6. **Developer Dashboard** → 제출 및 승인 대기
