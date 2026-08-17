@@ -1,7 +1,7 @@
 # Right-click on Web — AGENTS.md
 
 **Generated:** 2026-08-17 (init-deep refresh — CODE MAP added, 4-entry content-script orchestration, unit-test/verify commands; v0.10.0 target confirmed via `manifest.json`)
-**Version:** 0.10.0 release documentation target (confirm `manifest.json` before packaging)
+**Version:** 0.10.1 release documentation target (confirm `manifest.json` before packaging)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
@@ -122,8 +122,8 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 ```powershell
 # Load unpacked: chrome://extensions → Developer mode → Load unpacked → select this folder
 
-# Package for store submission (v0.10.0 local OCR, history, and last-region repeat runtime):
-Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.0.zip" -Force
+# Package for store submission (v0.10.1 theme, per-site exception, and OCR error guidance runtime):
+Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.1.zip" -Force
 # Exclude from ZIP: .git, .serena, .omo, history, docs, tests, popup-preview.html, README.md, assets/, .opencode/
 
 # Unit tests (Windows: explicit glob REQUIRED — a bare tests/unit dir arg is treated as a module path)
@@ -185,5 +185,5 @@ Cannot bypass:
 - **Store submission flow is documented in-repo, not in this file** — read `docs/store-submission-plan.md` for end-to-end CWS submission procedure; this AGENTS.md only indexes the artifacts.
 - **Korean-first UI** — popup labels, test page copy, and preview are Korean; do NOT translate without explicit request. README is intentionally Korean.
 - **v0.10.0 OCR privacy contract** — screen pixels exist only transiently in memory for local OCR and are never stored or transmitted. OCR history is default OFF; opt-in `chrome.storage.local` history stores sanitized final text plus `{ id, hostname, savedAt }` only, bounded to 20 entries, 30 days, and 64 KiB, never sync. `chrome.storage.session` last-region repeat stores only tab ID, hostname, viewport, rect, DPR, source, timestamp; it excludes image bytes and OCR text, validates the active context, then makes a fresh capture.
-- **v0.10.0 release-gate contract** — any source change requires regenerating `right-click-on-web-v0.10.0.zip` (24 entries) and matching it byte-for-byte via SHA-256 before the release gate closes (memory #716); `scripts/verify.ps1` is the pre-packaging gate.
+- **v0.10.1 release-gate contract** — any source change requires regenerating `right-click-on-web-v0.10.1.zip` (24 entries) and matching it byte-for-byte via SHA-256 before the release gate closes (memory #716); `scripts/verify.ps1` is the pre-packaging gate.
 - **Hierarchy (init-deep 2026-08-17)** — `docs/AGENTS.md` (docs conventions) and `tests/AGENTS.md` (QA conventions) are child files; children never repeat root content.
