@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-Two QA layers: the manual browser harness (`tests/manual/blocked-page.html`, 15 scenarios) and 15 Node unit-test files exercising pure helpers (settings/state/geometry/keyboard logic) — no `chrome.*` API-level mocking.
+Two QA layers: the manual browser harness (`tests/manual/blocked-page.html`, 15 scenarios) and 17 Node unit-test files exercising pure helpers (settings/state/geometry/keyboard/OCR capture-error/theme logic) — no `chrome.*` API-level mocking.
 
 ## STRUCTURE
 
@@ -18,6 +18,8 @@ tests/
     ├── content-feature-gates.test.js        # content.js EVENT_FEATURE_MAP / ATTRIBUTE_FEATURE_MAP
     ├── main-world-allowlist.test.js         # content-main.js BLOCKED_EVENT_NAMES allowlist
     ├── ocr-session-utils.test.js            # session state reducer / rerun + last-region validation
+    ├── ocr-capture-error.test.js            # OCR captureVisibleTab failure → Korean cause-specific message
+    ├── theme.test.js                        # shared.js resolveTheme + VALID_THEMES/default
     ├── ocr-history.test.js                  # 20 entries / 30 days / 64 KiB bounds
     ├── ocr-image-utils.test.js              # canvas preprocessing pipeline (profile/upscale/gray/invert/threshold)
     ├── image-context.test.js                # image context geometry cache shape

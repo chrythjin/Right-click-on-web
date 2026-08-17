@@ -100,6 +100,16 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     })
   });
 
+  const THEME_DARK = 'dark';
+  const THEME_NEON = 'neon';
+  const THEME_LIGHT = 'light';
+  const DEFAULT_THEME = THEME_DARK;
+  const VALID_THEMES = Object.freeze([THEME_DARK, THEME_NEON, THEME_LIGHT]);
+
+  function resolveTheme(stored) {
+    return VALID_THEMES.includes(stored) ? stored : DEFAULT_THEME;
+  }
+
   function isPlainObject(value) {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       return false;
@@ -203,6 +213,12 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     FEATURE_KEYS,
     DEFAULT_FEATURES,
     PRESET_FEATURES,
+    THEME_DARK,
+    THEME_NEON,
+    THEME_LIGHT,
+    DEFAULT_THEME,
+    VALID_THEMES,
+    resolveTheme,
     parseDomainSetting,
     normalizeDomainSettings
   });
@@ -211,7 +227,10 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Object.freeze({
     parseDomainSetting: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.parseDomainSetting,
-    normalizeDomainSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeDomainSettings
+    normalizeDomainSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeDomainSettings,
+    resolveTheme: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.resolveTheme,
+    VALID_THEMES: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.VALID_THEMES,
+    DEFAULT_THEME: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_THEME
   });
 } else {
 (function sharedInit(SETTINGS_UTILS) {
@@ -233,6 +252,12 @@ if (typeof module !== 'undefined' && module.exports) {
     FEATURE_KEYS,
     DEFAULT_FEATURES,
     PRESET_FEATURES,
+    THEME_DARK,
+    THEME_NEON,
+    THEME_LIGHT,
+    DEFAULT_THEME,
+    VALID_THEMES,
+    resolveTheme,
     parseDomainSetting,
     normalizeDomainSettings
   } = SETTINGS_UTILS;
@@ -272,9 +297,10 @@ if (typeof module !== 'undefined' && module.exports) {
 
   // storage default shape — kept in lockstep with DEFAULT_SETTINGS in
   // background.js and popup.js (legacy single-key shape).
-  const STORAGE_DEFAULTS = Object.freeze({
+const STORAGE_DEFAULTS = Object.freeze({
     enabled: true,
-    domainSettings: Object.freeze({})
+    domainSettings: Object.freeze({}),
+    theme: 'dark'
   });
 
   // ---- v0.5.0: Lite/Ultimate mode schema ----
@@ -660,6 +686,12 @@ if (typeof module !== 'undefined' && module.exports) {
     FEATURE_KEYS,
     DEFAULT_FEATURES,
     PRESET_FEATURES,
+    THEME_DARK,
+    THEME_NEON,
+    THEME_LIGHT,
+    DEFAULT_THEME,
+    VALID_THEMES,
+    resolveTheme,
     sessionKeyFor,
     getHostname,
     resolveDomainKey,

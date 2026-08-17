@@ -16,8 +16,11 @@ function loadBrowserShared() {
 test('Node loads only the pure settings seam', () => {
   assert.equal(globalThis.RIGHT_CLICK_ON_WEB_SHARED, undefined);
   assert.deepEqual(Object.keys(shared).sort(), [
+    'DEFAULT_THEME',
+    'VALID_THEMES',
     'normalizeDomainSettings',
-    'parseDomainSetting'
+    'parseDomainSetting',
+    'resolveTheme'
   ]);
 });
 

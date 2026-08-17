@@ -343,6 +343,39 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     return next;
   }
 
+  const INCOGNITO_CAPTURE_DISABLED_MESSAGE =
+    '시크릿 모드에서는 화면 캡처가 차단되어 있습니다. chrome://extensions에서 이 확장의 "시크릿 모드에서 허용"을 켠 뒤 다시 시도하세요.';
+  const CAPTURE_DISABLED_MESSAGE =
+    '이 페이지 또는 이 환경에서는 화면 캡처가 비활성화되어 있습니다. 브라우저 정책 또는 보안 프로그램이 캡처를 차단했을 수 있습니다.';
+  const PROTECTED_PAGE_MESSAGE =
+    '브라우저 내부 페이지(chrome://, 확장 관리 페이지, 웹 스토어 등)에서는 화면 캡처를 사용할 수 없습니다.';
+  const CAPTURE_PERMISSION_MESSAGE =
+    '화면 캡처 권한이 부족해 인식할 수 없습니다. 확장 권한 설정을 확인한 뒤 다시 시도하세요.';
+
+  function classifyOcrCaptureFailure(rawMessage, context = {}) {
+    const message = typeof rawMessage === 'string' && rawMessage.trim()
+      ? rawMessage
+      : 'OCR 화면 캡처에 실패했습니다.';
+    const lower = message.toLowerCase();
+    if (lower.includes('screenshots has been disabled') ||
+        (lower.includes('screenshot') && lower.includes('disabled'))) {
+      if (context?.incognito === true && context?.incognitoAllowed === false) {
+        return INCOGNITO_CAPTURE_DISABLED_MESSAGE;
+      }
+      return CAPTURE_DISABLED_MESSAGE;
+    }
+    if (lower.includes('cannot access') || lower.includes('chrome://') ||
+        lower.includes('chrome url') || lower.includes('web store') ||
+        lower.includes('cannot be inspected')) {
+      return PROTECTED_PAGE_MESSAGE;
+    }
+    if (lower.includes('all_urls') || lower.includes('permission') ||
+        lower.includes('not allowed') || lower.includes('not permitted')) {
+      return CAPTURE_PERMISSION_MESSAGE;
+    }
+    return message;
+  }
+
   function computeOcrEditPendingState({
     ocrOriginalText,
     ocrIsDirty,
@@ -416,7 +449,8 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     createOcrUiState,
     applyOcrSessionSnapshot,
     applyOcrSessionChanges,
-    computeOcrEditPendingState
+    computeOcrEditPendingState,
+    classifyOcrCaptureFailure
   });
 })();
 

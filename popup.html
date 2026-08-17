@@ -35,6 +35,10 @@
         </button>
       </section>
 
+      <button id="exceptionAddButton" class="exception-button is-hidden" type="button" aria-label="현재 사이트를 예외 목록에 추가 (전체 OFF)">
+        이 사이트 예외로 추가 (전체 OFF)
+      </button>
+
       <section class="mode-card" aria-live="polite" aria-atomic="true">
         <p class="label">완화 모드 (현재 사이트)</p>
         <div class="mode-toggle" role="radiogroup" aria-label="완화 모드">
@@ -63,6 +67,22 @@
         </div>
         <p id="presetHint" class="preset-hint">완전(기본): 모든 차단 해제. 안전: 드래그/드롭·오버레이 제거 최소화. 업로드 보호: 드롭존 보존.</p>
         <p id="effectiveSource" class="effective-source" role="status"></p>
+      </section>
+
+      <section class="theme-card">
+        <p class="label">테마 색</p>
+        <div class="theme-toggle" role="radiogroup" aria-label="테마">
+          <button id="themeDark" class="theme-button is-active" type="button" role="radio" aria-checked="true" tabindex="0" data-theme-value="dark">
+            다크
+          </button>
+          <button id="themeNeon" class="theme-button" type="button" role="radio" aria-checked="false" tabindex="-1" data-theme-value="neon">
+            네온
+          </button>
+          <button id="themeLight" class="theme-button" type="button" role="radio" aria-checked="false" tabindex="-1" data-theme-value="light">
+            라이트
+          </button>
+        </div>
+        <p id="themeHint" class="theme-hint">다크(기본): 모터스포츠 다크. 네온: 어두운 배경에 밝은 시안·마젠타. 라이트: 흰 배경에 네온 그린·마젠타.</p>
       </section>
 
       <button id="sessionButton" class="session-button" type="button" aria-pressed="false" disabled>

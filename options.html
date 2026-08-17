@@ -25,6 +25,21 @@
         <button id="globalToggle" class="toggle-button" type="button" aria-pressed="true">ON</button>
       </section>
 
+      <section class="options-section theme-section" aria-labelledby="themeTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">테마 색</p>
+            <h2 id="themeTitle">팝업 / 옵션 화면 색상</h2>
+          </div>
+        </div>
+        <p class="options-help">다크(기본): 모터스포츠 다크. 네온: 어두운 배경에 밝은 시안·마젠타. 라이트: 흰 배경에 네온 그린·마젠타. 사이트 본문이나 우회 동작에는 영향이 없습니다.</p>
+        <div class="theme-toggle" role="radiogroup" aria-label="테마">
+          <button id="optThemeDark" class="theme-button is-active" type="button" role="radio" aria-checked="true" tabindex="0" data-theme-value="dark">다크</button>
+          <button id="optThemeNeon" class="theme-button" type="button" role="radio" aria-checked="false" tabindex="-1" data-theme-value="neon">네온</button>
+          <button id="optThemeLight" class="theme-button" type="button" role="radio" aria-checked="false" tabindex="-1" data-theme-value="light">라이트</button>
+        </div>
+      </section>
+
       <section id="ocrResultPanel" class="options-section ocr-result-panel" aria-labelledby="ocrResultTitle" aria-live="polite" aria-atomic="true">
         <div class="section-heading">
           <div>

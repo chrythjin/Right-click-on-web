@@ -20,7 +20,8 @@ const state = {
   ocrDismissedResultText: null,
   ocrRerunInFlight: false,
   ocrHistoryEnabled: false,
-  ocrHistory: []
+  ocrHistory: [],
+  theme: SHARED.DEFAULT_THEME
 };
 
 const elements = {
@@ -63,7 +64,10 @@ const elements = {
   ocrHistoryList: document.getElementById('ocrHistoryList'),
   ocrHistoryDeleteAllBtn: document.getElementById('ocrHistoryDeleteAllBtn'),
   ocrHistoryDisableDeleteBtn: document.getElementById('ocrHistoryDisableDeleteBtn'),
-  ocrHistoryStatus: document.getElementById('ocrHistoryStatus')
+  ocrHistoryStatus: document.getElementById('ocrHistoryStatus'),
+  optThemeDark: document.getElementById('optThemeDark'),
+  optThemeNeon: document.getElementById('optThemeNeon'),
+  optThemeLight: document.getElementById('optThemeLight')
 };
 
 for (const [name, el] of Object.entries(elements)) {
@@ -78,12 +82,47 @@ async function loadState() {
   state.domainSettings = settings.domainSettings && typeof settings.domainSettings === 'object'
     ? settings.domainSettings
     : {};
+  state.theme = SHARED.resolveTheme(settings.theme);
+  applyTheme(state.theme);
+  syncThemeButtons();
 
   try {
     state.syncBytesInUse = await SHARED.getBytesInUse(chrome.storage.sync);
     state.syncAvailable = state.syncBytesInUse > 0;
   } catch (_) {
     state.syncAvailable = false;
+  }
+}
+
+function applyTheme(theme) {
+  const safe = SHARED.resolveTheme(theme);
+  document.documentElement.setAttribute('data-theme', safe);
+}
+
+function syncThemeButtons() {
+  const map = {
+    [SHARED.THEME_DARK]: elements.optThemeDark,
+    [SHARED.THEME_NEON]: elements.optThemeNeon,
+    [SHARED.THEME_LIGHT]: elements.optThemeLight
+  };
+  for (const [value, button] of Object.entries(map)) {
+    if (!button) continue;
+    const isActive = value === state.theme;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    button.tabIndex = isActive ? 0 : -1;
+  }
+}
+
+async function handleThemeSelect(theme) {
+  const safe = SHARED.resolveTheme(theme);
+  state.theme = safe;
+  applyTheme(safe);
+  syncThemeButtons();
+  try {
+    await SHARED.safeSyncSet({ theme: safe }, chrome.storage.local);
+  } catch (err) {
+    console.error('[Right-click on Web] failed to persist theme', err);
   }
 }
 
@@ -839,6 +878,9 @@ function reload() {
 }
 
 elements.globalToggle.addEventListener('click', () => handleGlobalToggle().catch(console.error));
+elements.optThemeDark?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_DARK).catch(console.error));
+elements.optThemeNeon?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_NEON).catch(console.error));
+elements.optThemeLight?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_LIGHT).catch(console.error));
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if ((areaName === 'local' || areaName === 'sync') && (changes.enabled || changes.domainSettings)) {
     reload().catch(console.error);

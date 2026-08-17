@@ -12,6 +12,34 @@
   --focus: #ffd36a;
 }
 
+:root[data-theme="neon"] {
+  --rosso-corsa: #00e5ff;
+  --deep-red: #0088aa;
+  --cockpit-black: #0a0d1a;
+  --carbon: #131830;
+  --carbon-light: #1e2347;
+  --gold: #ff2eaf;
+  --text: #f6fffd;
+  --muted: #b8f0ff;
+  --muted-soft: #8ad0e6;
+  --disabled: #4a5a6e;
+  --focus: #00ffe0;
+}
+
+:root[data-theme="light"] {
+  --rosso-corsa: #e6008a;
+  --deep-red: #b8006a;
+  --cockpit-black: #f6f7fa;
+  --carbon: #ffffff;
+  --carbon-light: #eef1f7;
+  --gold: #00a86b;
+  --text: #0e1a2b;
+  --muted: #3a4a60;
+  --muted-soft: #5a6a82;
+  --disabled: #b8c2d0;
+  --focus: #ff2eaf;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     --text: #1a1a1a;
@@ -627,6 +655,106 @@ h1 {
 }
 
 .main-world-notice.is-hidden {
+  display: none;
+}
+
+/* ---- v0.11.0 additions (theme + exception site) ---- */
+
+.theme-card {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(225, 6, 0, 0.5);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="light"] .theme-card {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.theme-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.theme-button {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+:root[data-theme="light"] .theme-button {
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.theme-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="light"] .theme-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.theme-button.is-active {
+  background: linear-gradient(135deg, var(--rosso-corsa), var(--deep-red));
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+}
+
+.theme-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.theme-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted-soft);
+  line-height: 1.4;
+}
+
+.exception-button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px dashed rgba(255, 46, 175, 0.45);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gold);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.exception-button:hover:not(:disabled) {
+  background: rgba(255, 46, 175, 0.12);
+  border-color: var(--gold);
+}
+
+.exception-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.exception-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.exception-button.is-hidden {
   display: none;
 }
 

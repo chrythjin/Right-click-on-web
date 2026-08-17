@@ -49,7 +49,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 ├── assets/screenshots/    # test-page.png — 1280×800 store submission screenshot
 ├── tests/manual/          # blocked-page.html — manual QA harness with 15 scenarios
 │                          #   (8 v0.2.0 + 2 v0.3.0 + Lite/Ultimate + v0.7.0/v0.8.0); screenshot.png
-├── tests/unit/            # 15 Node unit-test files (node:test; pure-function boundary; see tests/AGENTS.md)
+├── tests/unit/            # 17 Node unit-test files (node:test; pure-function boundary; see tests/AGENTS.md)
 └── docs/                  # INDEX.md, store-submission-plan.md, chrome-web-store-requirements.md,
                            #   deployment-manual.md, store-listing.md, benchmarking-roadmap.md,
                            #   bypass-runtime-investigation.md, privacy-policy.html, .nojekyll,
@@ -75,7 +75,7 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | Default storage init + migration | `background.js` | Initializes defaults, migrates local→sync on update, and normalizes legacy boolean domain entries |
 | Background OCR bridge, history, last-region repeat | `background.js` + `ocr-history.js` + `ocr-session-utils.js` | `captureVisibleTab` + offscreen local OCR; opt-in local-only history; validated fresh capture for last region |
 | Canvas OCR preprocessing pipeline | `ocr-image-utils.js` | Loaded by `offscreen.html` only (before `lib/tesseract.min.js`); profile/upscale/grayscale/invert/threshold plans (MAX_CROP_PIXELS=16M, confidence ≥ 70) |
-| Unit tests (pure-function boundary) | `tests/unit/` | 15 files via `node --test tests/unit/*.test.js` — Windows requires the explicit glob (bare `tests/unit` dir arg is treated as a module path); see tests/AGENTS.md |
+| Unit tests (pure-function boundary) | `tests/unit/` | 17 files via `node --test tests/unit/*.test.js` — Windows requires the explicit glob (bare `tests/unit` dir arg is treated as a module path); see tests/AGENTS.md |
 | Release-gate verification | `scripts/verify.ps1` | `node --check` all JS + manifest shape (4 content scripts, MAIN-first, no storage refs in content-main.js) + asset presence + background-script order + `git diff --check`; run before packaging |
 | Doc index & investigation notes | `docs/INDEX.md`, `docs/bypass-runtime-investigation.md` | Korean index of docs + recent sessions; v0.6.2-era bypass runtime investigation; see docs/AGENTS.md |
 | Git-excluded tool dirs | `.gitignore` | `.serena/`, `.omo/`, `.cortexkit/`, `.codegraph/`, `.opencode/`, `.playwright-mcp/`, `history/`, generated `right-click-on-web.zip` |

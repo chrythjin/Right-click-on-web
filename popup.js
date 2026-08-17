@@ -42,7 +42,8 @@ const state = {
   enabledSource: 'global',
   syncAvailable: false,
   syncBytesInUse: 0,
-  lastWriteFallback: false
+  lastWriteFallback: false,
+  theme: SHARED.DEFAULT_THEME
 };
 
 const elements = {
@@ -51,6 +52,7 @@ const elements = {
   domainText: document.getElementById('domainText'),
   domainHint: document.getElementById('domainHint'),
   domainToggle: document.getElementById('domainToggle'),
+  exceptionAddButton: document.getElementById('exceptionAddButton'),
   modeLite: document.getElementById('modeLite'),
   modeUltimate: document.getElementById('modeUltimate'),
   modeHint: document.getElementById('modeHint'),
@@ -59,6 +61,10 @@ const elements = {
   presetUploadSafe: document.getElementById('presetUploadSafe'),
   presetHint: document.getElementById('presetHint'),
   effectiveSource: document.getElementById('effectiveSource'),
+  themeDark: document.getElementById('themeDark'),
+  themeNeon: document.getElementById('themeNeon'),
+  themeLight: document.getElementById('themeLight'),
+  themeHint: document.getElementById('themeHint'),
   sessionButton: document.getElementById('sessionButton'),
   sessionNotice: document.getElementById('sessionNotice'),
   syncUsage: document.getElementById('syncUsage'),
@@ -103,12 +109,14 @@ async function loadState() {
   try {
     merged = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
   } catch (_) {
-    merged = { enabled: true, domainSettings: {} };
+    merged = { enabled: true, domainSettings: {}, theme: SHARED.DEFAULT_THEME };
   }
   state.globalEnabled = merged.enabled !== false;
   state.domainSettings = merged.domainSettings && typeof merged.domainSettings === 'object'
     ? merged.domainSettings
     : {};
+  state.theme = SHARED.resolveTheme(merged.theme);
+  applyTheme(state.theme);
   state.domainEntry = state.hostname && Object.prototype.hasOwnProperty.call(state.domainSettings, state.hostname)
     ? state.domainSettings[state.hostname]
     : null;
@@ -179,6 +187,10 @@ function render() {
     ? '전역 차단 완화 활성화'
     : '전역 차단 완화 비활성화';
 
+  // ---- Theme (UI-only, applied at document level via CSS variables) ----
+  applyTheme(state.theme);
+  syncThemeButtons();
+
   // ---- Domain toggle ----
   if (!state.hostname) {
     elements.domainText.textContent = '이 페이지에서는 도메인 설정 불가';
@@ -187,6 +199,10 @@ function render() {
     elements.domainToggle.disabled = true;
     elements.domainToggle.textContent = '—';
     elements.domainToggle.classList.remove('is-off');
+    if (elements.exceptionAddButton) {
+      elements.exceptionAddButton.classList.add('is-hidden');
+      elements.exceptionAddButton.disabled = true;
+    }
     elements.sessionButton.disabled = true;
     elements.modeLite.disabled = true;
     elements.modeUltimate.disabled = true;
@@ -202,11 +218,16 @@ function render() {
   elements.domainText.textContent = state.hostname;
   elements.domainText.classList.remove('is-unavailable');
 
-  const domainDecision = domainDecisionIgnoringSession();
+const domainDecision = domainDecisionIgnoringSession();
   elements.domainToggle.disabled = false;
   elements.domainToggle.textContent = domainDecision ? 'ON' : 'OFF';
   elements.domainToggle.classList.toggle('is-off', !domainDecision);
   elements.domainToggle.setAttribute('aria-pressed', String(domainDecision));
+
+  if (elements.exceptionAddButton) {
+    elements.exceptionAddButton.classList.remove('is-hidden');
+    elements.exceptionAddButton.disabled = false;
+  }
 
   if (state.sessionActive) {
     elements.domainHint.textContent = '세션 모드 활성 — 페이지 새로고침 후 도메인 설정 적용';
@@ -905,14 +926,75 @@ async function handleTriggerOcr() {
   }
 }
 
+function applyTheme(theme) {
+  const safe = SHARED.resolveTheme(theme);
+  document.documentElement.setAttribute('data-theme', safe);
+}
+
+function syncThemeButtons() {
+  const map = {
+    [SHARED.THEME_DARK]: elements.themeDark,
+    [SHARED.THEME_NEON]: elements.themeNeon,
+    [SHARED.THEME_LIGHT]: elements.themeLight
+  };
+  for (const [value, button] of Object.entries(map)) {
+    if (!button) continue;
+    const isActive = value === state.theme;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    button.tabIndex = isActive ? 0 : -1;
+  }
+}
+
+async function handleThemeSelect(theme) {
+  const safe = SHARED.resolveTheme(theme);
+  state.theme = safe;
+  applyTheme(safe);
+  syncThemeButtons();
+  try {
+    await SHARED.safeSyncSet({ theme: safe }, chrome.storage.local);
+  } catch (err) {
+    console.error('[Right-click on Web] failed to persist theme', err);
+  }
+}
+
+async function handleExceptionAdd() {
+  if (!state.hostname) {
+    return;
+  }
+  // Site-level exception = full OFF entry for the exact host.
+  // Use the same write path as a normal domain toggle so the
+  // profile + migration semantics are consistent.
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const entry = computeProfilePreservingEntry(matchedEntry, { enabled: false }, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
+  if (elements.exceptionAddButton) {
+    elements.exceptionAddButton.classList.add('is-hidden');
+  }
+}
+
 // ---- Wire up ----
 elements.toggleButton.addEventListener('click', handleGlobalToggle);
 elements.domainToggle.addEventListener('click', handleDomainToggle);
+if (elements.exceptionAddButton) {
+  elements.exceptionAddButton.addEventListener('click', handleExceptionAdd);
+}
 elements.modeLite.addEventListener('click', () => handleModeSelect(SHARED.MODE_LITE));
 elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MODE_ULTIMATE));
 elements.presetSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_SAFE));
 elements.presetComplete.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_COMPLETE));
 elements.presetUploadSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_UPLOAD_SAFE));
+if (elements.themeDark) {
+  elements.themeDark.addEventListener('click', () => handleThemeSelect(SHARED.THEME_DARK));
+}
+if (elements.themeNeon) {
+  elements.themeNeon.addEventListener('click', () => handleThemeSelect(SHARED.THEME_NEON));
+}
+if (elements.themeLight) {
+  elements.themeLight.addEventListener('click', () => handleThemeSelect(SHARED.THEME_LIGHT));
+}
 elements.sessionButton.addEventListener('click', handleSessionToggle);
 elements.copyDiagnosticButton.addEventListener('click', handleCopyDiagnosticReport);
 if (elements.ocrButton) {

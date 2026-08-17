@@ -342,6 +342,18 @@ async function allocateOcrRequestId() {
   return latestOcrRequestId;
 }
 
+async function describeOcrCaptureFailure(error, tab) {
+  const context = { incognito: tab?.incognito === true, incognitoAllowed: true };
+  if (context.incognito && typeof chrome.extension?.isAllowedIncognitoAccess === 'function') {
+    try {
+      context.incognitoAllowed = await chrome.extension.isAllowedIncognitoAccess();
+    } catch (checkError) {
+      console.warn('isAllowedIncognitoAccess check failed; assuming allowed:', checkError);
+    }
+  }
+  return OCR_SESSION.classifyOcrCaptureFailure(error?.message || String(error), context);
+}
+
 async function captureAndOcr(tab, request) {
   const requestId = await allocateOcrRequestId();
   const source = OCR_SESSION.normalizeOcrSource(request?.source);
@@ -377,7 +389,12 @@ async function captureAndOcr(tab, request) {
       throw new Error('OCR 재인식에 필요한 영역 정보가 올바르지 않습니다.');
     }
     void updateOcrSession({ type: 'loading', requestId });
-    const dataUrl = await chrome.tabs.captureVisibleTab(captureTab.windowId, { format: 'png' });
+    let dataUrl;
+    try {
+      dataUrl = await chrome.tabs.captureVisibleTab(captureTab.windowId, { format: 'png' });
+    } catch (captureError) {
+      throw new Error(await describeOcrCaptureFailure(captureError, captureTab));
+    }
     if (!dataUrl) {
       throw new Error('화면 캡처 데이터를 가져올 수 없습니다.');
     }
@@ -444,7 +461,8 @@ function initializeStorage() {
       enabled: existing.enabled !== false,
       domainSettings: existing.domainSettings && typeof existing.domainSettings === 'object'
         ? existing.domainSettings
-        : {}
+        : {},
+      theme: SHARED.resolveTheme(existing.theme)
     });
   });
 }
@@ -550,6 +568,17 @@ if (chrome.tabs && typeof chrome.tabs.onUpdated?.addListener === 'function') {
     if (typeof changeInfo?.url === 'string') {
       const updatedUrl = changeInfo.url.length > 0 ? changeInfo.url : tab?.url;
       void updateToolbarActionForTab(tabId, updatedUrl);
+    }
+  });
+}
+
+if (chrome.tabs && typeof chrome.tabs.onRemoved?.addListener === 'function') {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    const prefix = `${tabId}:`;
+    for (const key of imageContextCache.keys()) {
+      if (key.startsWith(prefix)) {
+        imageContextCache.delete(key);
+      }
     }
   });
 }
