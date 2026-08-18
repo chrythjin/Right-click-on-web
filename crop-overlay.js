@@ -497,7 +497,7 @@
     ta.style.position = 'fixed';
     ta.style.top = '-9999px';
     ta.style.opacity = '0';
-    document.body.appendChild(ta);
+    (document.body || document.documentElement).appendChild(ta);
     ta.focus();
     ta.select();
     try {

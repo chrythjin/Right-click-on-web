@@ -12,6 +12,8 @@
 
 ## 최근 세션 기록
 
+- [코드베이스 전체 검토 및 개선 계획 (2026-08-18)](sessions/20260818_121000_codebase-review-and-improvements.md)
+- [팝업 레이아웃 및 사이드 패널 오작동 조사 및 수정](sessions/20260818_102000_popup-layout-and-sidepanel-fixes.md)
 - [v0.10.1 테마 색상 변경 + 사이트 예외 등록 기능](sessions/20260817_210847_theme-and-exception-site.md)
 - [OCR 캡처 오류 원인별 한국어 안내 + 참조 사이트 검토](sessions/20260817_200344_ocr-capture-error-message.md)
 - [init-deep AGENTS.md 계층 갱신](sessions/20260817_184610_init-deep-agents-hierarchy.md)

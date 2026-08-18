@@ -861,6 +861,21 @@ async function removeDomain(hostname) {
   });
 }
 
+let reloadSettingsPromise = null;
+function reloadSettings() {
+  if (!reloadSettingsPromise) {
+    reloadSettingsPromise = loadState()
+      .then(() => {
+        renderGlobalState();
+        renderSites();
+        renderSyncUsage();
+        renderSidePanelHint();
+      })
+      .finally(() => { reloadSettingsPromise = null; });
+  }
+  return reloadSettingsPromise;
+}
+
 let reloadPromise = null;
 function reload() {
   state.ocrOriginalText = '';
@@ -882,8 +897,15 @@ elements.optThemeDark?.addEventListener('click', () => handleThemeSelect(SHARED.
 elements.optThemeNeon?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_NEON).catch(console.error));
 elements.optThemeLight?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_LIGHT).catch(console.error));
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if ((areaName === 'local' || areaName === 'sync') && (changes.enabled || changes.domainSettings)) {
-    reload().catch(console.error);
+  if (areaName === 'local' || areaName === 'sync') {
+    if (changes.theme) {
+      state.theme = SHARED.resolveTheme(changes.theme.newValue);
+      applyTheme(state.theme);
+      syncThemeButtons();
+    }
+    if (changes.enabled || changes.domainSettings) {
+      reloadSettings().catch(console.error);
+    }
   }
   if (areaName === 'local' && (changes[OCR_HISTORY.OCR_HISTORY_ENABLED_KEY] || changes[OCR_HISTORY.OCR_HISTORY_KEY])) {
     loadOcrHistory().catch(console.error);

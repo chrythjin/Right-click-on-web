@@ -1,7 +1,7 @@
 # Right-click on Web — AGENTS.md
 
-**Generated:** 2026-08-17 (init-deep refresh — CODE MAP added, 4-entry content-script orchestration, unit-test/verify commands; v0.10.0 target confirmed via `manifest.json`)
-**Version:** 0.10.1 release documentation target (confirm `manifest.json` before packaging)
+**Generated:** 2026-08-18 (v0.10.2 popup layout & side panel fix release target)
+**Version:** 0.10.2 release documentation target (confirm `manifest.json` before packaging)
 **Repo:** https://github.com/chryth/Right-click-on-Web
 **Type:** No-build vanilla Chrome Extension (Manifest V3)
 
@@ -99,6 +99,13 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 (LSP typescript + local `.codegraph/` index; Consumers = contexts that load the symbol)
 
 | Symbol | Type | Location | Consumers | Role |
+| Past session notes | `docs/sessions/` | timestamped history (Ymd_HMS_<task>.md) |
+
+## CODE MAP
+
+(LSP typescript + local `.codegraph/` index; Consumers = contexts that load the symbol)
+
+| Symbol | Type | Location | Consumers | Role |
 |--------|------|----------|-----------|------|
 | `RIGHT_CLICK_ON_WEB` | const | content.js:47 | content.js | ISOLATED config: blockedAttributes/events, style/marker ids, rescan interval |
 | `addEventInterceptors` | fn | content.js:566 | content.js | Capture-phase interceptors (secondary-button mouse, copy shortcuts, editable exemption) |
@@ -106,7 +113,6 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 | `enableUnlocker` / `disableUnlocker` | fn | content.js:652/673 | content.js | Idempotent enable/teardown (CSS, listeners, observer, rescan timer) |
 | `mainWorldPatch` | fn | content-main.js:63 | manifest entry 0 | MAIN-world `addEventListener`/`attachShadow` patches; `BLOCKED_EVENT_NAMES` allowlist at :78 |
 | `RIGHT_CLICK_ON_WEB_SHARED` | const | shared.js | content/popup/options/background/tests | `resolveDomainKey`/`getHostname`/`isDomainEnabled`/`safeSyncSet`/`resolveSettings`/presets+features |
-| `parseDomainSetting` | fn | shared.js:132 | popup/options/background/tests | Normalizes `{enabled, mode, preset, features}` incl. legacy boolean |
 | `initializeStorage` + `migrate*` | fn | background.js:441/452/487/512 | onInstalled | Defaults + local→sync + domainSettings schema migration |
 | `ensureOffscreenDocument` | fn | background.js:101→120 | background | Lazy `chrome.offscreen.createDocument('offscreen.html')` |
 | `captureAndOcr` | fn | background.js:345 | background | `captureVisibleTab` → crop → offscreen `recognize` |
@@ -122,8 +128,8 @@ Chrome MV3 extension that unblocks right-click, text selection, copy/drag on res
 ```powershell
 # Load unpacked: chrome://extensions → Developer mode → Load unpacked → select this folder
 
-# Package for store submission (v0.10.1 theme, per-site exception, and OCR error guidance runtime):
-Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.1.zip" -Force
+# Package for store submission (v0.10.2 layout, side panel, and OCR stability runtime):
+Compress-Archive -Path manifest.json,shared.js,ocr-session-utils.js,ocr-history.js,toolbar-action-utils.js,image-context.js,keyboard-utils.js,ocr-image-utils.js,background.js,content.js,content-main.js,crop-overlay.js,crop-overlay.css,offscreen.html,offscreen.js,popup.html,popup.css,popup.js,options.html,options.css,options.js,lib,langs,icons -DestinationPath "right-click-on-web-v0.10.2.zip" -Force
 # Exclude from ZIP: .git, .serena, .omo, history, docs, tests, popup-preview.html, README.md, assets/, .opencode/
 
 # Unit tests (Windows: explicit glob REQUIRED — a bare tests/unit dir arg is treated as a module path)

@@ -668,9 +668,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
   if (message.type === 'rcow:startCropOnActiveTab') {
-    void triggerCropOnActiveTab();
-    sendResponse({ ok: true });
-    return;
+    (async () => {
+      try {
+        await triggerCropOnActiveTab();
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message || String(error) });
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'rcow:openSidePanel') {
+    // Called from popup.js — the service worker's onMessage context satisfies
+    // Chrome's user-gesture requirement for chrome.sidePanel.open(), unlike
+    // the popup's async handler which severs the gesture chain after an await.
+    (async () => {
+      try {
+        const current = await currentWindow();
+        if (typeof current?.id === 'number' &&
+            chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
+          await chrome.sidePanel.open({ windowId: current.id });
+          sendResponse({ ok: true });
+        } else {
+          openOptionsFallback();
+          sendResponse({ ok: false, reason: 'no-window' });
+        }
+      } catch (_) {
+        openOptionsFallback();
+        sendResponse({ ok: false, reason: 'error' });
+      }
+    })();
+    return true;
   }
   if (message.type === 'rcow:imageContextObserved') {
     sendResponse({ ok: rememberImageContext(sender, message.payload) });

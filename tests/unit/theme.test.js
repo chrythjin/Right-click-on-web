@@ -39,3 +39,9 @@ test('VALID_THEMES: 동결되어 직접 변경 불가', () => {
 test('DEFAULT_THEME: dark', () => {
   assert.equal(DEFAULT_THEME, 'dark');
 });
+
+test('resolveTheme: 공백 및 대소문자 변형은 기본값으로 폴백', () => {
+  assert.equal(resolveTheme('DARK'), DEFAULT_THEME);
+  assert.equal(resolveTheme(' Dark '), DEFAULT_THEME);
+  assert.equal(resolveTheme('light\n'), DEFAULT_THEME);
+});

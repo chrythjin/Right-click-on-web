@@ -218,7 +218,7 @@ function render() {
   elements.domainText.textContent = state.hostname;
   elements.domainText.classList.remove('is-unavailable');
 
-const domainDecision = domainDecisionIgnoringSession();
+  const domainDecision = domainDecisionIgnoringSession();
   elements.domainToggle.disabled = false;
   elements.domainToggle.textContent = domainDecision ? 'ON' : 'OFF';
   elements.domainToggle.classList.toggle('is-off', !domainDecision);
@@ -904,16 +904,20 @@ async function handleOpenSidePanel() {
     handleOpenOptions();
     return;
   }
+  // chrome.sidePanel.open() requires a synchronous user-gesture context in
+  // Chrome MV3. Calling it after an `await` (e.g. chrome.tabs.query) severs
+  // the gesture chain and causes the API to silently fall back to opening a
+  // new tab instead of the side panel. We delegate to the background service
+  // worker via sendMessage — the service worker's onMessage handler is treated
+  // as a fresh user-gesture context and can call sidePanel.open() without the
+  // restriction.
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && typeof tab.windowId === 'number') {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-      return;
-    }
+    await chrome.runtime.sendMessage({ type: 'rcow:openSidePanel' });
   } catch (_) {
-    // Fall through to options page.
+    // Message delivery failed (e.g. service worker dormant); fall back to the
+    // options page so the user always gets *something*.
+    handleOpenOptions();
   }
-  handleOpenOptions();
 }
 
 async function handleTriggerOcr() {
@@ -1091,7 +1095,7 @@ function reloadState() {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   let needsReload = false;
   if (areaName === 'local' || areaName === 'sync') {
-    if (changes.enabled || changes.domainSettings) {
+    if (changes.enabled || changes.domainSettings || changes.theme) {
       needsReload = true;
     }
   } else if (areaName === 'session') {
