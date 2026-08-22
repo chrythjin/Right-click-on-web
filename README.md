@@ -89,6 +89,7 @@ No Node.js build step or bundler is required. You can load the repository direct
 
 ---
 
+<a id="privacy--security"></a>
 ## 🔒 Privacy & Security
 
 * **Zero External Communication**: Does not perform any network requests, analytics, telemetry, or remote code execution.
