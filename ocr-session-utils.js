@@ -12,6 +12,8 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
   const OCR_PREPROCESSING_PROFILES = Object.freeze(['off', 'auto', 'grayscale', 'invert']);
   const OCR_SOURCES = Object.freeze(['region', 'image']);
   const MAX_CAPTURE_AGE_MS = 24 * 60 * 60 * 1000;
+  const MAX_OCR_ATTEMPTS = 3;
+  const PROFILE_COST = Object.freeze({ off: 0, grayscale: 1, invert: 2, auto: 3 });
 
   function normalizeOcrSource(value) {
     return typeof value === 'string' && OCR_SOURCES.includes(value) ? value : 'region';
@@ -39,6 +41,31 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       invert: preprocessing.invert === true,
       threshold: Number.isFinite(preprocessing.threshold) ? preprocessing.threshold : null
     };
+  }
+
+  function normalizeAttemptSummaries(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    const attempts = [];
+    for (const entry of value) {
+      const profile = typeof entry?.profile === 'string' && OCR_PREPROCESSING_PROFILES.includes(entry.profile)
+        ? entry.profile : '';
+      if (!profile || seen.has(profile)) continue;
+      seen.add(profile);
+      attempts.push({
+        profile,
+        confidence: Math.max(0, Math.min(100, Math.round(finiteNumber(entry.confidence)))),
+        timingMs: Math.max(0, Math.min(10 * 60 * 1000, Math.round(finiteNumber(entry.timingMs))))
+      });
+      if (attempts.length === MAX_OCR_ATTEMPTS) break;
+    }
+    return attempts;
+  }
+
+  function recommendOcrProfile(attempts) {
+    const tried = new Set(normalizeAttemptSummaries(attempts).map((entry) => entry.profile));
+    return Object.keys(PROFILE_COST).filter((profile) => !tried.has(profile))
+      .sort((left, right) => PROFILE_COST[left] - PROFILE_COST[right] || left.localeCompare(right))[0] || null;
   }
 
   function normalizeCrop(value) {
@@ -76,7 +103,12 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     const preprocessingProfile = OCR_PREPROCESSING_PROFILES.includes(metadata.preprocessingProfile)
       ? metadata.preprocessingProfile
       : '';
-    if (tabId === null || !hostname || !viewport || !Number.isFinite(x) || !Number.isFinite(y) ||
+    const devicePixelRatio = (Number.isFinite(metadata.devicePixelRatio) && metadata.devicePixelRatio >= 0.25 && metadata.devicePixelRatio <= 8)
+      ? metadata.devicePixelRatio
+      : (viewport && Number.isFinite(viewport.devicePixelRatio) && viewport.devicePixelRatio >= 0.25 && viewport.devicePixelRatio <= 8)
+        ? viewport.devicePixelRatio
+        : null;
+    if (tabId === null || !hostname || !viewport || devicePixelRatio === null || !Number.isFinite(x) || !Number.isFinite(y) ||
         !Number.isFinite(width) || !Number.isFinite(height) || x < 0 || y < 0 ||
         width <= 0 || height <= 0 || x + width > viewport.width || y + height > viewport.height ||
         capturedAt <= 0 || !requestId || !preprocessingProfile) {
@@ -87,7 +119,7 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       hostname,
       viewport,
       cropRect: { x, y, width, height },
-      devicePixelRatio: viewport.devicePixelRatio,
+      devicePixelRatio,
       capturedAt,
       requestId,
       preprocessingProfile,
@@ -96,35 +128,40 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
   }
 
   function normalizeLastRegionRerun(value) {
-    const captured = normalizeCaptureMetadata(value);
-    if (captured && captured.source === 'region') {
-      return {
-        tabId: captured.tabId,
-        hostname: captured.hostname,
-        viewport: { width: captured.viewport.width, height: captured.viewport.height },
-        rect: { ...captured.cropRect },
-        devicePixelRatio: captured.devicePixelRatio,
-        source: 'region',
-        timestamp: captured.capturedAt
-      };
-    }
-
+    if (!value || typeof value !== 'object') return null;
     const metadata = value && typeof value === 'object' ? value : {};
     const viewport = normalizeViewport({
       width: metadata.viewport?.width,
       height: metadata.viewport?.height,
-      devicePixelRatio: metadata.devicePixelRatio
+      devicePixelRatio: metadata.viewport?.devicePixelRatio || metadata.devicePixelRatio || undefined
     });
-    const rect = metadata.rect && typeof metadata.rect === 'object' ? metadata.rect : {};
+    const rect = (metadata.cropRect ?? metadata.rect) && typeof (metadata.cropRect ?? metadata.rect) === 'object' ? (metadata.cropRect ?? metadata.rect) : {};
     const x = Number.isFinite(rect.x) ? rect.x : NaN;
     const y = Number.isFinite(rect.y) ? rect.y : NaN;
     const width = Number.isFinite(rect.width) ? rect.width : NaN;
     const height = Number.isFinite(rect.height) ? rect.height : NaN;
-    const timestamp = Number.isFinite(metadata.timestamp) ? Math.round(metadata.timestamp) : 0;
+    const timestamp = Number.isFinite(metadata.capturedAt) ? Math.round(metadata.capturedAt) : Number.isFinite(metadata.timestamp) ? Math.round(metadata.timestamp) : 0;
     if (!Number.isInteger(metadata.tabId) || metadata.tabId < 0 || typeof metadata.hostname !== 'string' ||
         !metadata.hostname || metadata.source !== 'region' || !viewport || !Number.isFinite(x) ||
         !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height) || x < 0 || y < 0 ||
         width <= 0 || height <= 0 || x + width > viewport.width || y + height > viewport.height || timestamp <= 0) {
+      const failed = [];
+      if (!Number.isInteger(metadata.tabId) || metadata.tabId < 0) failed.push('tabId');
+      if (typeof metadata.hostname !== 'string' || !metadata.hostname) failed.push('hostname');
+      if (metadata.source !== 'region') failed.push('source:' + metadata.source);
+      if (!viewport) failed.push('viewport');
+      if (!Number.isFinite(x)) failed.push('x');
+      if (!Number.isFinite(y)) failed.push('y');
+      if (!Number.isFinite(width)) failed.push('width');
+      if (!Number.isFinite(height)) failed.push('height');
+      if (x < 0) failed.push('x<0');
+      if (y < 0) failed.push('y<0');
+      if (width <= 0) failed.push('w<=0');
+      if (height <= 0) failed.push('h<=0');
+      if (x + width > viewport.width) failed.push('x+w>vw');
+      if (y + height > viewport.height) failed.push('y+h>vh');
+      if (timestamp <= 0) failed.push('ts<=0');
+      console.log('normalizeLastRegionRerun FAIL:', failed.join(', '));
       return null;
     }
     return {
@@ -132,7 +169,7 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       hostname: metadata.hostname,
       viewport: { width: viewport.width, height: viewport.height },
       rect: { x, y, width, height },
-      devicePixelRatio: viewport.devicePixelRatio,
+      devicePixelRatio: viewport.devicePixelRatio ?? metadata.devicePixelRatio ?? undefined,
       source: 'region',
       timestamp
     };
@@ -215,6 +252,30 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     };
   }
 
+  function createBboxRerunRequest(metadata, bbox, profile) {
+    const normalized = normalizeCaptureMetadata(metadata);
+    const safeProfile = OCR_PREPROCESSING_PROFILES.includes(profile) ? profile : '';
+    if (!normalized || !safeProfile || !bbox || typeof bbox !== 'object') return null;
+    const dpr = normalized.devicePixelRatio;
+    const x0 = Number.isFinite(bbox.x0) ? bbox.x0 : NaN;
+    const y0 = Number.isFinite(bbox.y0) ? bbox.y0 : NaN;
+    const x1 = Number.isFinite(bbox.x1) ? bbox.x1 : NaN;
+    const y1 = Number.isFinite(bbox.y1) ? bbox.y1 : NaN;
+    if (![x0, y0, x1, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) return null;
+    const cropWidth = normalized.cropRect.width * dpr;
+    const cropHeight = normalized.cropRect.height * dpr;
+    if (x0 < 0 || y0 < 0 || x1 > cropWidth || y1 > cropHeight) return null;
+    const cropRect = {
+      x: normalized.cropRect.x + x0 / dpr,
+      y: normalized.cropRect.y + y0 / dpr,
+      width: (x1 - x0) / dpr,
+      height: (y1 - y0) / dpr
+    };
+    if (cropRect.x < 0 || cropRect.y < 0 || cropRect.width <= 0 || cropRect.height <= 0 ||
+        cropRect.x + cropRect.width > normalized.viewport.width || cropRect.y + cropRect.height > normalized.viewport.height) return null;
+    return { cropRect, viewport: { ...normalized.viewport }, preprocessingProfile: safeProfile, source: 'region', useRequestedPreprocessing: true };
+  }
+
   function createLatestOcrResult(result, source = 'region', metadata = null) {
     if (!result || result.ok !== true) {
       return null;
@@ -226,6 +287,13 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       crop: normalizeCrop(result.crop),
       source: normalizeOcrSource(source)
     };
+    const attempts = normalizeAttemptSummaries(result.attempts);
+    if (attempts.length) latestResult.attempts = attempts;
+    const recommendedProfile = attempts.length ? recommendOcrProfile(attempts) : null;
+    if (recommendedProfile) latestResult.recommendedProfile = recommendedProfile;
+    if (result.detail && typeof result.detail === 'object') {
+      latestResult.detail = result.detail;
+    }
     const normalizedMetadata = normalizeCaptureMetadata(metadata);
     if (normalizedMetadata) {
       latestResult.metadata = normalizedMetadata;
@@ -233,13 +301,28 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     return latestResult;
   }
 
-  function createOcrStatus(state, error = '', requestId = 0) {
+  function normalizeOcrProgress(value) {
+    return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+  }
+
+  function normalizeOcrPhase(value) {
+    return typeof value === 'string'
+      ? value.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim().slice(0, 80)
+      : '';
+  }
+
+  function createOcrStatus(state, error = '', requestId = 0, progress = null, phase = '') {
     const status = { state };
     if (Number.isInteger(requestId) && requestId > 0) {
       status.requestId = requestId;
     }
     if (state === 'error') {
       status.error = typeof error === 'string' ? error : String(error || 'OCR 처리 오류');
+    }
+    if (state === 'loading' && progress !== null) {
+      status.progress = normalizeOcrProgress(progress);
+      const normalizedPhase = normalizeOcrPhase(phase);
+      if (normalizedPhase) status.phase = normalizedPhase;
     }
     return status;
   }
@@ -253,14 +336,17 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
         [LATEST_OCR_STATUS_KEY]: previous[LATEST_OCR_STATUS_KEY] || null
       };
     }
+    const requestId = Number.isInteger(event.requestId) ? event.requestId : 0;
+    const currentRequestId = getOcrRequestId(previous);
+    const currentStatus = previous[LATEST_OCR_STATUS_KEY] || null;
+    if (requestId && (requestId < currentRequestId ||
+        (requestId === currentRequestId && currentStatus?.state === 'cancelled' && event.type !== 'cancelled'))) {
+      return {
+        [LATEST_OCR_RESULT_KEY]: latestOcrResult,
+        [LATEST_OCR_STATUS_KEY]: currentStatus
+      };
+    }
     if (event.type === 'success') {
-      const requestId = Number.isInteger(event.requestId) ? event.requestId : 0;
-      if (requestId && requestId < getOcrRequestId(previous)) {
-        return {
-          [LATEST_OCR_RESULT_KEY]: latestOcrResult,
-          [LATEST_OCR_STATUS_KEY]: previous[LATEST_OCR_STATUS_KEY] || null
-        };
-      }
       const normalized = createLatestOcrResult(event.result, event.source, event.metadata);
       return {
         [LATEST_OCR_RESULT_KEY]: normalized || latestOcrResult,
@@ -268,29 +354,21 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       };
     }
     if (event.type === 'error') {
-      const requestId = Number.isInteger(event.requestId) ? event.requestId : 0;
-      if (requestId && requestId < getOcrRequestId(previous)) {
-        return {
-          [LATEST_OCR_RESULT_KEY]: latestOcrResult,
-          [LATEST_OCR_STATUS_KEY]: previous[LATEST_OCR_STATUS_KEY] || null
-        };
-      }
       return {
         [LATEST_OCR_RESULT_KEY]: latestOcrResult,
         [LATEST_OCR_STATUS_KEY]: createOcrStatus('error', event.error, requestId)
       };
     }
     if (event.type === 'loading') {
-      const requestId = Number.isInteger(event.requestId) ? event.requestId : 0;
-      if (requestId && requestId < getOcrRequestId(previous)) {
-        return {
-          [LATEST_OCR_RESULT_KEY]: latestOcrResult,
-          [LATEST_OCR_STATUS_KEY]: previous[LATEST_OCR_STATUS_KEY] || null
-        };
-      }
       return {
         [LATEST_OCR_RESULT_KEY]: latestOcrResult,
-        [LATEST_OCR_STATUS_KEY]: createOcrStatus('loading', '', requestId)
+        [LATEST_OCR_STATUS_KEY]: createOcrStatus('loading', '', requestId, event.progress, event.phase)
+      };
+    }
+    if (event.type === 'cancelled') {
+      return {
+        [LATEST_OCR_RESULT_KEY]: latestOcrResult,
+        [LATEST_OCR_STATUS_KEY]: createOcrStatus('cancelled', '', requestId)
       };
     }
     return {
@@ -435,8 +513,11 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     OCR_SESSION_KEYS,
     OCR_PREPROCESSING_PROFILES,
     OCR_SOURCES,
+    MAX_OCR_ATTEMPTS,
     MAX_CAPTURE_AGE_MS,
     normalizeOcrSource,
+    normalizeAttemptSummaries,
+    recommendOcrProfile,
     createLatestOcrResult,
     normalizeCaptureMetadata,
     normalizeLastRegionRerun,
@@ -445,6 +526,7 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     validateLastRegionRerun,
     createOcrRerunRequest,
     createLastRegionRerunRequest,
+    createBboxRerunRequest,
     reduceOcrSessionState,
     createOcrUiState,
     applyOcrSessionSnapshot,

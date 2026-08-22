@@ -53,6 +53,10 @@ const elements = {
   domainHint: document.getElementById('domainHint'),
   domainToggle: document.getElementById('domainToggle'),
   exceptionAddButton: document.getElementById('exceptionAddButton'),
+  quickLiteButton: document.getElementById('quickLiteButton'),
+  quickSessionOffButton: document.getElementById('quickSessionOffButton'),
+  quickPermanentOffButton: document.getElementById('quickPermanentOffButton'),
+  quickRecoveryHint: document.getElementById('quickRecoveryHint'),
   modeLite: document.getElementById('modeLite'),
   modeUltimate: document.getElementById('modeUltimate'),
   modeHint: document.getElementById('modeHint'),
@@ -61,6 +65,8 @@ const elements = {
   presetUploadSafe: document.getElementById('presetUploadSafe'),
   presetHint: document.getElementById('presetHint'),
   effectiveSource: document.getElementById('effectiveSource'),
+  featureImpactCard: document.getElementById('featureImpactCard'),
+  featureImpactContent: document.getElementById('featureImpactContent'),
   themeDark: document.getElementById('themeDark'),
   themeNeon: document.getElementById('themeNeon'),
   themeLight: document.getElementById('themeLight'),
@@ -69,7 +75,9 @@ const elements = {
   sessionNotice: document.getElementById('sessionNotice'),
   syncUsage: document.getElementById('syncUsage'),
   copyDiagnosticButton: document.getElementById('copyDiagnosticButton'),
+  showDiagnosticButton: document.getElementById('showDiagnosticButton'),
   diagnosticStatus: document.getElementById('diagnosticStatus'),
+  diagnosticOutput: document.getElementById('diagnosticOutput'),
   ocrButton: document.getElementById('ocrButton'),
   openOptionsButton: document.getElementById('openOptionsButton'),
   openSidePanelButton: document.getElementById('openSidePanelButton'),
@@ -140,13 +148,18 @@ async function loadState() {
     try {
       const sessionData = await SHARED.storageGet(chrome.storage.session, sessionKey);
       state.sessionActive = sessionData[sessionKey] === true;
+      state.sessionPaused = sessionData[sessionKey] === false;
     } catch (_) {
       state.sessionActive = false;
+      state.sessionPaused = false;
     }
+  } else {
+    state.sessionPaused = false;
   }
 
-  state.effectiveEnabled = state.sessionActive
-    || SHARED.isDomainEnabled(state.globalEnabled, state.domainSettings, state.hostname);
+  state.effectiveEnabled = (state.sessionActive || state.sessionPaused)
+    ? state.sessionActive
+    : SHARED.isDomainEnabled(state.globalEnabled, state.domainSettings, state.hostname);
   // Session always implies ultimate. Otherwise inherit domain mode
   // (or default when no entry).
   state.effectiveMode = state.sessionActive
@@ -196,6 +209,12 @@ function render() {
     elements.domainText.textContent = '이 페이지에서는 도메인 설정 불가';
     elements.domainText.classList.add('is-unavailable');
     elements.domainHint.textContent = 'http(s) 페이지를 방문하면 도메인별 설정이 표시됩니다.';
+    if (elements.quickRecoveryHint) {
+      elements.quickRecoveryHint.textContent = 'http(s) 페이지를 방문하면 빠른 복구 옵션이 표시됩니다.';
+    }
+    if (elements.quickLiteButton) elements.quickLiteButton.disabled = true;
+    if (elements.quickSessionOffButton) elements.quickSessionOffButton.disabled = true;
+    if (elements.featureImpactCard) elements.featureImpactCard.classList.add('is-hidden');
     elements.domainToggle.disabled = true;
     elements.domainToggle.textContent = '—';
     elements.domainToggle.classList.remove('is-off');
@@ -321,6 +340,14 @@ function render() {
     presetState.source, presetState.displayPreset, presetState.isPopupPreset, presetState.hasMatchedEntry, SHARED
   );
 
+  // ---- Quick recovery UI (v0.10.2 task 4) ----
+  renderQuickRecovery();
+  if (state.hostname) {
+    renderFeatureImpact(state.features, state.effectiveMode, presetState);
+  } else if (elements.featureImpactCard) {
+    elements.featureImpactCard.classList.add('is-hidden');
+  }
+
   // ---- Session button ----
   elements.sessionButton.disabled = !state.sessionAvailable;
   elements.sessionButton.classList.toggle('is-active', state.sessionActive);
@@ -402,6 +429,118 @@ function renderMainWorldNotice() {
   } else {
     notice.classList.add('is-hidden');
   }
+}
+
+const RECOVERY_FEATURE_ROWS = [
+  { key: 'contextMenu',   label: '우클릭 메뉴 복원' },
+  { key: 'selection',     label: '텍스트 선택 허용' },
+  { key: 'copyShortcuts', label: '복사/잘라내기(Ctrl+C/X)' },
+  { key: 'dragStart',    label: '드래그 시작 허용' },
+  { key: 'dragDrop',     label: '드래그 오버/드롭 허용' },
+  { key: 'overlayCleanup', label: '오버레이 제거' },
+  { key: 'printUnhide',  label: '인쇄 시 숨김 복원' },
+  { key: 'shadowDom',    label: '닫힌 Shadow DOM 허용' },
+  { key: 'ultimateCss',  label: 'CSS 블록 지정 강제 허용' }
+];
+
+function computeFeatureImpact(features, mode, presetState) {
+  const isLite = mode === SHARED.MODE_LITE;
+  const isSafe = presetState.displayPreset === SHARED.PRESET_SAFE;
+  const isUploadSafe = presetState.displayPreset === SHARED.PRESET_UPLOAD_SAFE;
+  const rows = [];
+  for (const { key, label } of RECOVERY_FEATURE_ROWS) {
+    let active = false;
+    if (key === 'ultimateCss') {
+      active = !isLite && Boolean(features);
+    } else if (key === 'dragStart' || key === 'dragDrop') {
+      active = (isSafe || isUploadSafe) ? false : Boolean(features && features[key]);
+    } else if (key === 'overlayCleanup') {
+      active = isSafe ? false : Boolean(features && features[key]);
+    } else if (key === 'shadowDom' || key === 'printUnhide') {
+      active = isSafe ? false : Boolean(features && features[key]);
+    } else {
+      active = Boolean(features && features[key]);
+    }
+    rows.push({ label, active });
+  }
+  return rows;
+}
+
+function renderFeatureImpact(features, mode, presetState) {
+  const card = elements.featureImpactCard;
+  const content = elements.featureImpactContent;
+  if (!card || !content) return;
+
+  const rows = computeFeatureImpact(features, mode, presetState);
+  content.innerHTML = '';
+  for (const { label, active } of rows) {
+    const row = document.createElement('div');
+    row.className = 'feature-impact-row' + (active ? ' is-active' : '');
+    row.innerHTML = `<span class="feature-impact-icon"></span><span class="feature-impact-label">${label}</span><span class="feature-impact-badge">${active ? 'ON' : 'OFF'}</span>`;
+    content.appendChild(row);
+  }
+  card.classList.remove('is-hidden');
+}
+
+function renderQuickRecovery() {
+  const liteBtn = elements.quickLiteButton;
+  const pauseBtn = elements.quickSessionOffButton;
+  const offBtn = elements.quickPermanentOffButton;
+  const hint = elements.quickRecoveryHint;
+  if (!liteBtn || !pauseBtn || !offBtn || !hint) return;
+
+  const canSession = state.sessionAvailable;
+
+  if (!state.hostname) {
+    hint.textContent = 'http(s) 페이지를 방문하면 빠른 복구 옵션이 표시됩니다.';
+    liteBtn.disabled = true;
+    pauseBtn.disabled = true;
+    offBtn.disabled = true;
+    pauseBtn.classList.remove('is-paused');
+    pauseBtn.querySelector('.recovery-button-label').textContent = '이번 세션만 일시정지';
+    pauseBtn.querySelector('.recovery-button-desc').textContent = '확장 온 · 이 사이트만 잠시 끄기';
+    return;
+  }
+
+  if (state.sessionActive) {
+    liteBtn.disabled = true;
+    pauseBtn.disabled = true;
+    offBtn.disabled = true;
+    hint.textContent = '세션 활성 중 — Lite 전환은 새로고침 후 적용됩니다.';
+    pauseBtn.classList.remove('is-paused');
+    pauseBtn.querySelector('.recovery-button-label').textContent = '이번 세션만 일시정지';
+    pauseBtn.querySelector('.recovery-button-desc').textContent = '확장 온 · 이 사이트만 잠시 끄기';
+    return;
+  }
+
+  liteBtn.disabled = false;
+
+  if (state.sessionPaused) {
+    pauseBtn.disabled = false;
+    pauseBtn.classList.add('is-paused');
+    pauseBtn.querySelector('.recovery-button-label').textContent = '일시정지됨 — 클릭하여 복원';
+    pauseBtn.querySelector('.recovery-button-desc').textContent = '세션 OFF 복원 · 확장 다시 허용';
+    offBtn.disabled = false;
+    hint.textContent = '이 사이트 일시정지됨 — 복원하면 확장 우회 재활성화';
+    return;
+  }
+
+  if (!canSession) {
+    pauseBtn.disabled = true;
+    pauseBtn.classList.remove('is-paused');
+    pauseBtn.querySelector('.recovery-button-label').textContent = '이번 세션만 일시정지';
+    pauseBtn.querySelector('.recovery-button-desc').textContent = '세션 사용 불가';
+    offBtn.disabled = false;
+    hint.textContent = '세션 일시정지 불가 — 영구 OFF를 사용하세요.';
+    return;
+  }
+
+  pauseBtn.disabled = false;
+  pauseBtn.classList.remove('is-paused');
+  pauseBtn.querySelector('.recovery-button-label').textContent = '이번 세션만 일시정지';
+  pauseBtn.querySelector('.recovery-button-desc').textContent = '확장 온 · 이 사이트만 잠시 끄기';
+  offBtn.disabled = false;
+  hint.textContent = '확장 전체를 끄지 않고 이 사이트만 설정을 조정합니다.';
 }
 
 function computeMainWorldNotice(state, modeLite) {
@@ -622,11 +761,34 @@ const DIAGNOSTIC_EVENT_COUNTER_KEYS = Object.freeze([
   'dragover', 'drop', 'mousedown', 'mouseup', 'keydown'
 ]);
 const DIAGNOSTIC_SOURCES = Object.freeze(['initial', 'session', 'domain', 'global']);
+const DIAGNOSTIC_HOSTNAME_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i;
+
+function readShortcutAssignment(chromeApi) {
+  if (!chromeApi.commands || typeof chromeApi.commands.getAll !== 'function') {
+    return Promise.resolve('unavailable');
+  }
+  return chromeApi.commands.getAll()
+    .then((commands) => {
+      const command = Array.isArray(commands) && commands.find((item) => item && item.name === 'trigger-ocr');
+      return command && typeof command.shortcut === 'string' && command.shortcut.length > 0
+        ? 'assigned'
+        : 'unassigned';
+    })
+    .catch(() => 'unavailable');
+}
+
+function resolveDiagnosticCapabilities(chromeApi) {
+  return {
+    localOcr: Boolean(chromeApi && chromeApi.offscreen),
+    ocrEngineReady: Boolean(chromeApi && chromeApi.offscreen)
+  };
+}
 
 function isSafeDiagnosticHostname(value) {
   return typeof value === 'string'
     && value.length > 0
-    && !/[/?#:@\\]/.test(value);
+    && DIAGNOSTIC_HOSTNAME_PATTERN.test(value)
+    && !value.includes('..');
 }
 
 async function requestDiagnosticBridge(chromeApi) {
@@ -659,7 +821,7 @@ function copyAllowedCounters(source, keys) {
     } catch (_) {
       value = undefined;
     }
-    result[key] = Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+    result[key] = Number.isInteger(value) && value >= 0 ? value : 0;
   }
   return result;
 }
@@ -727,6 +889,13 @@ function serializeDiagnosticReport(input, SHARED) {
     mode,
     preset,
     enabledFeatures,
+    capabilities: {
+      localOcr: Boolean(input && input.capabilities && input.capabilities.localOcr === true),
+      ocrEngineReady: Boolean(input && input.capabilities && input.capabilities.ocrEngineReady === true),
+      shortcutAssignment: ['assigned', 'unassigned', 'unavailable'].includes(input && input.shortcutAssignment)
+        ? input.shortcutAssignment
+        : 'unavailable'
+    },
     counters: {
       attributeRemovals: copyAllowedCounters(readDiagnosticValue(stats, 'attributeRemovals'), DIAGNOSTIC_ATTRIBUTE_COUNTER_KEYS),
       eventInterceptions: copyAllowedCounters(readDiagnosticValue(stats, 'eventInterceptions'), DIAGNOSTIC_EVENT_COUNTER_KEYS),
@@ -737,6 +906,26 @@ function serializeDiagnosticReport(input, SHARED) {
   };
 }
 
+async function buildDiagnosticReport({ chromeApi, version, hostname, matchedDomain, SHARED }) {
+  const bridge = await requestDiagnosticBridge(chromeApi);
+  if (!bridge.ok) {
+    return bridge;
+  }
+  try {
+    const report = serializeDiagnosticReport({
+      version,
+      hostname,
+      matchedDomain,
+      stats: bridge.stats,
+      capabilities: resolveDiagnosticCapabilities(chromeApi),
+      shortcutAssignment: await readShortcutAssignment(chromeApi)
+    }, SHARED);
+    return { ok: true, report };
+  } catch (_) {
+    return { ok: false, reason: '진단 보고서를 안전하게 생성하지 못했습니다. 현재 페이지를 새로고침한 뒤 다시 시도하세요.' };
+  }
+}
+
 function showDiagnosticStatus(text, kind) {
   elements.diagnosticStatus.textContent = text;
   elements.diagnosticStatus.classList.remove('is-hidden', 'is-error', 'is-success');
@@ -744,31 +933,31 @@ function showDiagnosticStatus(text, kind) {
 }
 
 async function copyDiagnosticReport({ chromeApi, clipboard, version, hostname, matchedDomain, SHARED, onStatus }) {
-  const bridge = await requestDiagnosticBridge(chromeApi);
-  if (!bridge.ok) {
-    onStatus(bridge.reason, 'error');
-    return false;
-  }
-  let report;
-  try {
-    report = serializeDiagnosticReport({
-      version,
-      hostname,
-      matchedDomain,
-      stats: bridge.stats
-    }, SHARED);
-  } catch (_) {
-    onStatus('진단 보고서를 안전하게 생성하지 못했습니다. 현재 페이지를 새로고침한 뒤 다시 시도하세요.', 'error');
+  const result = await buildDiagnosticReport({ chromeApi, version, hostname, matchedDomain, SHARED });
+  if (!result.ok) {
+    onStatus(result.reason, 'error');
     return false;
   }
   try {
-    await clipboard.writeText(JSON.stringify(report, null, 2));
+    await clipboard.writeText(JSON.stringify(result.report, null, 2));
     onStatus('개인정보를 제외한 로컬 진단 보고서를 클립보드에 복사했습니다.', 'success');
     return true;
   } catch (_) {
     onStatus('진단 보고서를 클립보드에 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인한 뒤 다시 시도하세요.', 'error');
     return false;
   }
+}
+
+async function showDiagnosticReport({ chromeApi, version, hostname, matchedDomain, SHARED, output, onStatus }) {
+  const result = await buildDiagnosticReport({ chromeApi, version, hostname, matchedDomain, SHARED });
+  if (!result.ok) {
+    onStatus(result.reason, 'error');
+    return false;
+  }
+  output.textContent = JSON.stringify(result.report, null, 2);
+  output.classList.remove('is-hidden');
+  onStatus('현재 사이트의 개인정보 제외 진단을 표시했습니다.', 'success');
+  return true;
 }
 
 function handleCopyDiagnosticReport() {
@@ -779,6 +968,18 @@ function handleCopyDiagnosticReport() {
     hostname: state.hostname,
     matchedDomain: state.matchedKey,
     SHARED,
+    onStatus: showDiagnosticStatus
+  });
+}
+
+function handleShowDiagnosticReport() {
+  return showDiagnosticReport({
+    chromeApi: chrome,
+    version: chrome.runtime.getManifest().version,
+    hostname: state.hostname,
+    matchedDomain: state.matchedKey,
+    SHARED,
+    output: elements.diagnosticOutput,
     onStatus: showDiagnosticStatus
   });
 }
@@ -899,34 +1100,28 @@ function handleOpenOptions() {
   chrome.runtime.openOptionsPage();
 }
 
-async function handleOpenSidePanel() {
+function handleOpenSidePanel() {
   if (!chrome.sidePanel || typeof chrome.sidePanel.open !== 'function') {
     handleOpenOptions();
     return;
   }
-  // chrome.sidePanel.open() requires a synchronous user-gesture context in
-  // Chrome MV3. Calling it after an `await` (e.g. chrome.tabs.query) severs
-  // the gesture chain and causes the API to silently fall back to opening a
-  // new tab instead of the side panel. We delegate to the background service
-  // worker via sendMessage — the service worker's onMessage handler is treated
-  // as a fresh user-gesture context and can call sidePanel.open() without the
-  // restriction.
-  try {
-    await chrome.runtime.sendMessage({ type: 'rcow:openSidePanel' });
-  } catch (_) {
-    // Message delivery failed (e.g. service worker dormant); fall back to the
-    // options page so the user always gets *something*.
-    handleOpenOptions();
-  }
+  // Keep open() in the original click stack. Any preceding await can consume
+  // Chrome's transient user activation and make the API reject.
+  const windowId = chrome.windows && typeof chrome.windows.WINDOW_ID_CURRENT === 'number'
+    ? chrome.windows.WINDOW_ID_CURRENT
+    : -2;
+  chrome.sidePanel.open({ windowId }).catch(handleOpenOptions);
 }
 
 async function handleTriggerOcr() {
   try {
-    await chrome.runtime.sendMessage({ type: 'rcow:startCropOnActiveTab' });
+    const response = await chrome.runtime.sendMessage({ type: 'rcow:startCropOnActiveTab' });
+    if (!response?.ok) {
+      throw new Error(response?.error || 'OCR 영역 선택을 시작하지 못했습니다.');
+    }
+    window.close();
   } catch (err) {
     console.warn('Failed to send startCropOnActiveTab message:', err);
-  } finally {
-    window.close();
   }
 }
 
@@ -979,11 +1174,48 @@ async function handleExceptionAdd() {
   }
 }
 
+async function handleQuickLite() {
+  if (!state.hostname || state.sessionActive) return;
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const entry = computeProfilePreservingEntry(matchedEntry, { enabled: true, mode: SHARED.MODE_LITE }, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
+}
+
+async function handleQuickSessionOff() {
+  if (!state.hostname || !state.sessionAvailable || state.sessionActive) return;
+  const sessionKey = SHARED.sessionKeyFor(state.hostname);
+  if (state.sessionPaused) {
+    await SHARED.storageRemove(chrome.storage.session, [sessionKey]);
+  } else {
+    await SHARED.storageSet(chrome.storage.session, { [sessionKey]: false });
+  }
+}
+
+async function handleQuickPermanentOff() {
+  if (!state.hostname) return;
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const entry = computeProfilePreservingEntry(matchedEntry, { enabled: false }, SHARED);
+  await writeDomainSettings({ [state.hostname]: entry });
+}
+
 // ---- Wire up ----
 elements.toggleButton.addEventListener('click', handleGlobalToggle);
 elements.domainToggle.addEventListener('click', handleDomainToggle);
 if (elements.exceptionAddButton) {
   elements.exceptionAddButton.addEventListener('click', handleExceptionAdd);
+}
+if (elements.quickLiteButton) {
+  elements.quickLiteButton.addEventListener('click', handleQuickLite);
+}
+if (elements.quickSessionOffButton) {
+  elements.quickSessionOffButton.addEventListener('click', handleQuickSessionOff);
+}
+if (elements.quickPermanentOffButton) {
+  elements.quickPermanentOffButton.addEventListener('click', handleQuickPermanentOff);
 }
 elements.modeLite.addEventListener('click', () => handleModeSelect(SHARED.MODE_LITE));
 elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MODE_ULTIMATE));
@@ -1001,6 +1233,7 @@ if (elements.themeLight) {
 }
 elements.sessionButton.addEventListener('click', handleSessionToggle);
 elements.copyDiagnosticButton.addEventListener('click', handleCopyDiagnosticReport);
+elements.showDiagnosticButton.addEventListener('click', handleShowDiagnosticReport);
 if (elements.ocrButton) {
   elements.ocrButton.addEventListener('click', handleTriggerOcr);
 }
@@ -1015,6 +1248,7 @@ const hasKeyboardUtils = Boolean(
   KB
   && typeof KB.getNextModeFromKeydown === 'function'
   && typeof KB.getNextPresetFromKeydown === 'function'
+  && typeof KB.getNextValueFromKeydown === 'function'
 );
 if (!hasKeyboardUtils) {
   console.warn('[Right-click on Web] keyboard-utils unavailable; arrow-key navigation disabled');
@@ -1077,6 +1311,29 @@ elements.presetSafe.addEventListener('keydown', handlePresetKeydown);
 elements.presetComplete.addEventListener('keydown', handlePresetKeydown);
 elements.presetUploadSafe.addEventListener('keydown', handlePresetKeydown);
 
+function handleThemeKeydown(event) {
+  if (!hasKeyboardUtils) return;
+  const buttons = [
+    { el: elements.themeDark, id: SHARED.THEME_DARK },
+    { el: elements.themeNeon, id: SHARED.THEME_NEON },
+    { el: elements.themeLight, id: SHARED.THEME_LIGHT }
+  ].filter(({ el }) => Boolean(el));
+  const current = buttons.find(({ el }) => el === event.currentTarget);
+  if (!current) return;
+  const nextTheme = KB.getNextValueFromKeydown(buttons.map(({ id }) => id), current.id, event.key);
+  if (!nextTheme) return;
+
+  event.preventDefault();
+  const next = buttons.find(({ id }) => id === nextTheme);
+  if (!next) return;
+  next.el.focus();
+  handleThemeSelect(nextTheme);
+}
+
+elements.themeDark?.addEventListener('keydown', handleThemeKeydown);
+elements.themeNeon?.addEventListener('keydown', handleThemeKeydown);
+elements.themeLight?.addEventListener('keydown', handleThemeKeydown);
+
 // Re-render whenever storage changes — covers both same-tab updates
 // and the rare case where another popup instance wrote first.
 // Coalesces concurrent onChanged fires into a single in-flight
@@ -1126,10 +1383,14 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveCurrentPreset,
     presetLabelKorean,
     advancedPresetLabelKorean,
+    computeFeatureImpact,
+    RECOVERY_FEATURE_ROWS,
     requestDiagnosticBridge,
     copyAllowedCounters,
+    buildDiagnosticReport,
     copySafeFeatureMap,
     serializeDiagnosticReport,
-    copyDiagnosticReport
+    copyDiagnosticReport,
+    showDiagnosticReport
   };
 }

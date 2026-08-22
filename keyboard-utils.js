@@ -20,6 +20,27 @@
   const PRESET_UPLOAD_SAFE = 'upload-safe';
   const POPUP_PRESET_ORDER = Object.freeze([PRESET_SAFE, PRESET_COMPLETE, PRESET_UPLOAD_SAFE]);
 
+  function getNextValueFromKeydown(order, currentValue, eventKey) {
+    if (!Array.isArray(order) || order.length === 0) return null;
+    const index = order.indexOf(currentValue);
+    if (index === -1) return null;
+
+    switch (eventKey) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        return order[(index + 1) % order.length];
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        return order[(index - 1 + order.length) % order.length];
+      case 'Home':
+        return order[0];
+      case 'End':
+        return order[order.length - 1];
+      default:
+        return null;
+    }
+  }
+
   function getNextModeFromKeydown(currentMode, eventKey) {
     const isLiteActive = currentMode === MODE_LITE;
     const isUltimateActive = currentMode === MODE_ULTIMATE;
@@ -51,30 +72,7 @@
   // navigation key or currentPreset is outside the popup set (e.g.
   // 'selection', 'media-safe', 'custom' — those live in options only).
   function getNextPresetFromKeydown(currentPreset, eventKey) {
-    const index = POPUP_PRESET_ORDER.indexOf(currentPreset);
-    if (index === -1) {
-      return null;
-    }
-    let nextIndex;
-    switch (eventKey) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        nextIndex = (index + 1) % POPUP_PRESET_ORDER.length;
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        nextIndex = (index - 1 + POPUP_PRESET_ORDER.length) % POPUP_PRESET_ORDER.length;
-        break;
-      case 'Home':
-        nextIndex = 0;
-        break;
-      case 'End':
-        nextIndex = POPUP_PRESET_ORDER.length - 1;
-        break;
-      default:
-        return null;
-    }
-    return POPUP_PRESET_ORDER[nextIndex];
+    return getNextValueFromKeydown(POPUP_PRESET_ORDER, currentPreset, eventKey);
   }
 
   function clampCropRect(rect, viewportWidth, viewportHeight, minSize) {
@@ -175,6 +173,7 @@
     PRESET_COMPLETE: PRESET_COMPLETE,
     PRESET_UPLOAD_SAFE: PRESET_UPLOAD_SAFE,
     POPUP_PRESET_ORDER: POPUP_PRESET_ORDER,
+    getNextValueFromKeydown: getNextValueFromKeydown,
     getNextModeFromKeydown: getNextModeFromKeydown,
     getNextPresetFromKeydown: getNextPresetFromKeydown,
     clampCropRect: clampCropRect,

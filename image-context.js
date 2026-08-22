@@ -68,9 +68,8 @@
   function sanitizeHostname(hostname) {
     if (typeof hostname !== 'string' || hostname.length === 0 || hostname.trim() !== hostname) return '';
     try {
-      const parsed = new URL(`http://${hostname}/`);
+      const parsed = new URL(`ftp://${hostname}/`);
       if (parsed.username || parsed.password || parsed.port || parsed.pathname !== '/' || parsed.search || parsed.hash) return '';
-      if (hostname.includes(':') && !(hostname.startsWith('[') && hostname.endsWith(']'))) return '';
       return parsed.hostname.toLowerCase();
     } catch (_) {
       return '';

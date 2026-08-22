@@ -1,119 +1,143 @@
 # Right-click on Web
 
-Chrome Manifest V3 湲곕컲--no-build ?뺤옣 ?꾨줈洹몃옩?낅땲-- ?쇰컲?곸씤 ?뱀궗?댄듃--?고겢由? ?띿뒪--?좏깮, 蹂듭궗/?섎씪?닿린, ?쒕옒洹?李⑤떒--?꾪솕?섎뒗 MVP?낅땲--
+[![Chrome MV3](https://img.shields.io/badge/Manifest-V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
+[![WASM OCR](https://img.shields.io/badge/OCR-100%25%20Offline%20WASM-34A853?style=flat-square)](https://github.com/naptha/tesseract.js)
+[![No Telemetry](https://img.shields.io/badge/Privacy-Zero%20Network-EA4335?style=flat-square)](#privacy--security)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## 湲곕뒫 踰붿쐞
+**Right-click on Web** is a modern, no-build, privacy-first Chrome (Manifest V3) extension designed to **unblock right-click menus, text selection, copy/cut shortcuts, and drag-and-drop** on restrictive websites. It also features a **100% offline on-device WASM OCR engine** to extract unselectable text from images, Canvas elements, and locked regions directly in your browser.
 
-- ?고겢由?硫붾돱 李⑤떒 ?꾪솕 (contextmenu)
-- ?띿뒪--?좏깮 李⑤떒 ?꾪솕 (selectstart, user-select CSS)
-- 蹂듭궗 / ?섎씪?닿린 / 遺숈뿬?ｊ린 李⑤떒 ?꾪솕 (copy, cut, paste)
-- ?쒕옒洹?李⑤떒 ?꾪솕 (dragstart)
-- ?띿뒪--?쒕∼ 李⑤떒 ?꾪솕 (dragover, drop) --?섏씠吏 --drop target--preventDefault ?고쉶
-- 留덉슦--?ㅼ슫 / --李⑤떒 ?꾪솕 (mousedown, mouseup)
-- 紐⑤컮--湲멸쾶 ?꾨Ⅴ湲?李⑤떒 ?꾪솕 (touchstart, touchend, touchmove) --?대?吏 ?--/ 留곹겕 蹂듭궗 而⑦뀓?ㅽ듃 硫붾돱 蹂듭썝
-- ?대?吏 / 留곹겕 ?쒕옒洹----李⑤떒 ?꾪솕 (`-webkit-user-drag`, `user-drag` CSS 臾댄슚--
-- 李⑤떒 ?ㅻ쾭?덉씠(?щ챸 李⑤떒 div) 臾대젰----`position: absolute/fixed` + 鍮--띿뒪--+ ?몃씪--on* ?몃뱾?щ? 媛吏?李⑤떒 div--`pointer-events`瑜?臾대젰--
-- inline blocking attribute ?쒓굅 (`on*` ?몃뱾--8醫?
-- ?숈쟻?쇰줈 ?ㅼ떆 異붽--섎뒗 李⑤떒 attribute 媛먯? (MutationObserver)
-- ?섏씠吏媛 ?ы썑--?깅줉?섎뒗 李⑤떒 由ъ뒪--臾대젰----MAIN world?먯꽌 `EventTarget.prototype.addEventListener`瑜--⑥튂?섏뿬 李⑤떒 ?대깽--??낆쓽 由ъ뒪--?깅줉 ?먯껜瑜?李⑤떒
-- Closed Shadow DOM 媛뺤젣 蹂----MAIN world?먯꽌 `Element.prototype.attachShadow`瑜--⑥튂?섏뿬 `mode: 'closed'`瑜?`open`?쇰줈 媛뺤젣 蹂----?대?源뚯? ?뺣━
-- ?좉릿 `on*` ?띿꽦 ?댁젣 --MAIN world?먯꽌 `Object.defineProperty`瑜--⑥튂?섏뿬 李⑤떒 ?띿꽦--`configurable: true`濡?媛뺤젣 (?좉릿 ?띿꽦--?쒓굅 媛--
-- 二쇨린--?ъ뒪罹--?2珥?媛꾧꺽?쇰줈 ?꾩껜 DOM--?ы깘?됲븯--Shadow DOM源뚯? 李⑤떒 attribute ?ъ젣嫄?(--鍮꾧------쇱떆 ?뺤?)
-- ?앹뾽?먯꽌 ?꾩뿭 ON/OFF ?좉?
-- ?ㅽ뻾 ?듦퀎 (`window.__rightClickOnWebStats`) --?쒓굅/?명꽣?됲듃/?ㅻ쾭?덉씠 臾대젰--Shadow Root ?ㅼ틪/二쇨린--?ъ뒪罹?移댁슫--
+---
 
-## 蹂닿컯 硫붿빱?덉쬁 (v0.2.0)
+## 🌟 Key Features
 
---踰꾩쟾? --媛쒖쓽 content script濡--숈옉?⑸땲-- `manifest.json`--`content_scripts`------ぉ--?깅줉?덉뒿?덈떎.
+### 1. Dual-World Unblocking Engine
+* **Preemptive Prototype Patching (`MAIN` World)**: Runs at `document_start` to neutralize page-level blocking event listeners (`contextmenu`, `selectstart`, `dragstart`) and convert `closed` Shadow DOMs to `open` before restrictive page scripts execute.
+* **DOM Cleanup & Capture Interception (`ISOLATED` World)**: Strips inline `on*` blocking attributes, injects non-intrusive selection styles, and overrides empty pointer-blocking overlays.
+* **Form & Input Preservation**: Automatically detects editable fields (`<input>`, `<textarea>`, `contenteditable`) to preserve standard native editing and paste behaviors.
 
-| ?ㅽ겕由쏀듃 | ?ㅽ뻾 而⑦뀓?ㅽ듃 | --븷 |
-|---|---|---|
-| `content.js` | ISOLATED world (?뺤옣 寃⑸━ 而⑦뀓?ㅽ듃) | DOM ?뺣━, ?띿꽦 ?쒓굅, capture ?④퀎 ?명꽣?됲듃, MutationObserver, 二쇨린--?ъ뒪罹? Shadow Root ?ш? |
-| `content-main.js` | MAIN world (?섏씠吏 ?숈씪 而⑦뀓?ㅽ듃) | `addEventListener` / `attachShadow` / `Object.defineProperty` ?꾨줈?좏----⑥튂 --?섏씠吏媛 李⑤떒 由ъ뒪?덈? ?깅줉?섍굅--?좉렐 ?띿꽦--留뚮뱶--?됱쐞 ?먯껜瑜?臾대젰--|
+### 2. 100% On-Device Offline WASM OCR
+* **Zero External Calls**: Runs Tesseract.js directly inside a local Chrome Offscreen Document. No screenshot or pixel data ever leaves your device.
+* **Interactive Area Crop**: Press <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> on macOS) to drag and capture any visible screen area.
+* **Image Context Menu**: Right-click on any image to perform direct instant OCR.
+* **Canvas Preprocessing Pipeline**: Built-in adaptive upscaling, binarization, and contrast enhancement filters.
 
---?ㅽ겕由쏀듃 紐⑤몢 `run_at: "document_start"` + `all_frames: true`濡--ㅽ뻾?⑸땲-- MAIN world ?ㅽ겕由쏀듃媛 ?섏씠吏 而⑦뀓?ㅽ듃?먯꽌 癒쇱? ?⑥튂瑜--곸슜?섎㈃, ?댄썑 紐⑤뱺 ?섏씠吏 ?ㅽ겕由쏀듃--李⑤떒 由ъ뒪--?깅줉? 鍮--⑥닔媛 ?⑸땲-- ISOLATED world--capture ?④퀎 ?명꽣?됲꽣--?덉쟾留앹쑝濡--⑥븘, ?대뼡 寃쎈줈濡--대깽?멸? ?꾨떖?섎뱺 李⑤떒 ?대깽?몄쓽 ?뷀뤃--?숈옉--蹂댁옣?⑸땲--
+### 3. Smart OCR Text Editor & Post-Processing
+* **Smart Text Cleanup**: Automatically removes zero-width characters, joins wrapped lines/hyphenated words, and collapses redundant spaces.
+* **Custom Correction Dictionary**: Define local word-replacement rules to automatically fix recurring OCR typos.
+* **Full Editor Support**: In-place text editing, word search/replace, character counters, copy to clipboard, and Undo/Redo stack.
 
-### 蹂닿컯?쇰줈 ?由щ뒗 耳?댁뒪
+### 4. Advanced Domain & Profile Controls
+* **Granular Per-Domain Settings**: Enable or disable unblocking per site with parent-domain inheritance and Public Suffix List (PSL) protection.
+* **Lite vs. Ultimate Modes**: Choose between *Lite* (JS unblock only) and *Ultimate* (forced CSS selection & drag enablement).
+* **Transient Session Mode**: Temporarily enable bypass for the current browser session without permanently modifying site rules.
+* **Settings Transfer & Sync**: Export/import settings via JSON files and synchronize rules seamlessly across devices via `chrome.storage.sync`.
 
-| 耳?댁뒪 | ?댁쟾 | v0.2.0 |
-|---|---|---|
-| ?섏씠吏媛 ?섏씠吏 濡쒕뱶 --`addEventListener('contextmenu', e => e.preventDefault())`瑜--깅줉 | ?명꽣?됲꽣--留됲옒 | ?섏씠吏--?깅줉 ?먯껜媛 臾댄슚?붾맖 (--洹쇰낯-- |
-| ?섏씠吏媛 `setInterval`濡?李⑤떒 attribute瑜--щ?李?| MutationObserver媛 利됱떆 ?쒓굅 | MutationObserver + 2珥?二쇨린 ?ъ뒪罹붿쑝濡--댁쨷 ?덉쟾留?|
-| ?섏씠吏媛 `Object.defineProperty(el, 'oncontextmenu', {configurable:false})`濡--좉툑 | ?좉릿 ?띿꽦? ?쒓굅 ?ㅽ뙣 | configurable:true濡?媛뺤젣 --?쒓굅 |
-| ?섏씠吏媛 `attachShadow({mode:'closed'})`濡?肄섑뀗痢?遊됱씤 | ?대? ?묎렐 遺덇? | ?먮룞?쇰줈 open?쇰줈 蹂?섎릺--?대? ?뺣━ 媛--|
-| ?몃? iframe ?대--먯꽌 ?숈쟻 李⑤떒 | all_frames:true濡----| all_frames:true + Shadow Root ?ш? 媛뺥솕 |
+### 5. UI & Accessibility
+* **Chrome Side Panel**: Inspect and edit OCR results or manage domain rules side-by-side with the active webpage.
+* **Themes & High-Zoom Reflow**: Supports Dark (Motorsport Rosso Corsa), Neon, and Light themes with full keyboard accessibility (<kbd>Tab</kbd>, Arrow keys) and responsive reflow up to 200% zoom.
 
-## ?쒗븳 ?ы빆
+---
 
---?뺤옣? 紐⑤뱺 ?ъ씠?몄쓽 100% ?고쉶瑜?蹂댁옣?섏? ?딆뒿?덈떎. ?대뒗 ?꾨줈洹몃옩--?ㅻ쪟媛 ?꾨땲硫? --釉뚮씪?곗--?蹂댁븞 ?쒖? ?뺤콉 諛?湲곗닠--?뱀꽦?쇰줈 ?명븳 洹쇰낯?곸씤 ?쒓퀎?낅땲-- ?ㅼ쓬--寃쎌슦?먮뒗 ?숈옉--?쒗븳----?덉뒿?덈떎.
+## 🏗️ Architecture Overview
 
-1. **?대?吏--罹붾쾭--Canvas) ?댁쓽 ?띿뒪--*
-   - 湲?먭? ?띿뒪--?곗씠?곌? ?꾨땶 ?대?吏 ?뚯씪?대굹 HTML5 Canvas ?붿냼 ?댁뿉 洹몃┝(?쎌?) ?뺥깭濡--쒗쁽--寃쎌슦, ?쒕옒洹명븷 ?띿뒪--?먯껜媛 議댁옱?섏? ?딆쑝誘濡--좏깮----?놁뒿?덈떎.
-2. **蹂댁븞 泥섎━--?몃? ?꾨젅--(Sandboxed iframe)**
-   - MAIN world ?⑥튂--?숈씪 異쒖쿂 ?섏씠吏 ?먮뒗 `sandbox`媛 ?녿뒗 iframe--?--?숈옉?⑸땲-- `sandbox="allow-scripts"` ?댁긽--紐낆떆?섏? ?딆? iframe--?몃? JS쨌CSS媛 李⑤떒?섏뼱 ?⑥튂 ?먯껜媛 ?곸슜?섏? ?딆뒿?덈떎.
-3. **罹≪뒓?붾맂 ?곸뿭 (Closed Shadow DOM --遊됱씤 --**
-   - MAIN world ?⑥튂--`attachShadow` ?몄텧 ?쒖젏--`closed` --`open`?쇰줈 蹂?섑빀?덈떎. ?대? ?ㅻⅨ 異쒖쿂 肄붾뱶--?몃? iframe?먯꽌 ?앹꽦쨌遊됱씤--Shadow Root--?ы썑--?ъ쭊?낇븷 --?놁뒿?덈떎.
-4. **DRM 諛?蹂댄샇--誘몃뵒--(Netflix --**
-   - 湲덉쑖 蹂댁븞 ?섏씠吏--?숈쁺--?ㅽ듃由щ컢 ?쒕퉬----OS/釉뚮씪?곗? ?듭떖 ?붿쭊 ?덈꺼?먯꽌 罹≪쿂 諛?蹂듭궗瑜--쒖뼱?섎뒗 ?뱀닔 ?곸뿭?먮뒗 ?묐룞?섏? ?딆뒿?덈떎.
-5. **?낆옄?곸씤 ?쒕옒洹--쒕∼ 湲곕뒫--?덈뒗 ----*
-   - 蹂대뱶寃뚯엫, 吏-- ?뱀닔--?먮뵒----?먯껜?곸씤 留덉슦--議곗옉 ?명꽣?섏씠?ㅻ? 媛吏----깆뿉?쒕뒗 MAIN world ?⑥튂媛 `addEventListener('contextmenu'/'copy'/'paste'/'dragstart')` ?먯껜瑜?李⑤떒?섎?濡--뺤긽?곸씤 議곗옉--媛꾩꽠--諛쒖깮----?덉뒿?덈떎. ?대떦 ?ъ씠?몄뿉?쒕뒗 ?앹뾽 ?좉?濡?OFF 泥섎━----?덉뒿?덈떎.
+```
+[Web Page]
+    │
+    ├── MAIN World (content-main.js)
+    │     ├── Prototype patch: EventTarget.prototype.addEventListener
+    │     ├── Prototype patch: Element.prototype.attachShadow (closed -> open)
+    │     └── Sentinel listeners (Preserves AbortSignal contract)
+    │
+    ├── ISOLATED World (content.js, shared.js)
+    │     ├── Capture-phase event interceptors
+    │     ├── Inline blocking attribute removal
+    │     ├── MutationObserver & periodic DOM rescan
+    │     └── Reversible CSS selection injection
+    │
+    └── Offscreen Document (offscreen.html / offscreen.js)
+          ├── Offline Tesseract.js (WASM + Local traineddata)
+          ├── Canvas preprocessing (Grayscale, Thresholding, Inversion)
+          └── Zero network connectivity sandbox
+```
 
-## 沅뚰븳 ?ㅻ챸
+---
 
-- `storage`: ?앹뾽--ON/OFF ?곹깭 諛--듦퀎瑜--?ν빀?덈떎.
-- `<all_urls>` host permission: ?ъ슜?먭? 諛⑸Ц?섎뒗 ?遺遺꾩쓽 ?섏씠吏--content script瑜--먮룞 ?곸슜?섍린 ?꾪빐 ?꾩슂?⑸땲--
+## 📦 Installation (Load Unpacked)
 
-?먭꺽 ?쒕쾭 ?꾩넚, 遺꾩꽍 異붿쟻, ?먭꺽 肄붾뱶 濡쒕뵫? ?ы븿?섏? ?딆뒿?덈떎.
+No Node.js build step or bundler is required. You can load the repository directly into Chrome:
 
-## 釉뚮씪?곗? ?붽뎄 ?ы빆
+1. Clone or download this repository:
+   ```bash
+   git clone https://github.com/chrythjin/Right-click-on-web.git
+   ```
+2. Open Chrome and navigate to `chrome://extensions`.
+3. Enable **Developer mode** in the top-right corner.
+4. Click **Load unpacked** and select the root directory of this repository.
+5. The extension is now active and ready to use!
 
-- Chrome 111 ?댁긽 (Manifest V3 + `world: "MAIN"` 吏--
-- Chrome --Chromium 湲곕컲 釉뚮씪?곗?(Edge, Brave -- 111 ?댁긽
+---
 
-## ?좉? OFF ?숈옉 踰붿쐞
+## ⌨️ Shortcuts & Usage
 
-?앹뾽?먯꽌 OFF濡--좉--섎㈃ **?꾩옱 ?섏씠吏--`content.js` ?덉씠?대쭔** 鍮꾪솢?깊솕?⑸땲-- ?대? `document_start` ?쒖젏--?곸슜--`content-main.js`--MAIN world ?⑥튂(?꾨줈?좏----泥----섏씠吏 ?섎챸 ?숈븞 ?좎--⑸땲-- ?대뒗 ?ㅼ쓬 --媛吏 ?섎?瑜?媛뽰뒿?덈떎.
+| Action | Shortcut (Windows/Linux) | Shortcut (macOS) | Description |
+| :--- | :--- | :--- | :--- |
+| **Area OCR Capture** | <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | Open interactive screen crop overlay |
+| **Image OCR** | Right-click image → *이미지에서 텍스트 추출 (OCR)* | Right-click image → *이미지에서 텍스트 추출 (OCR)* | Extract text directly from target image |
+| **Cancel Crop** | <kbd>Esc</kbd> | <kbd>Esc</kbd> | Dismiss active crop selection |
+| **Side Panel** | Open from Extension Popup | Open from Extension Popup | Manage settings & OCR editor in side panel |
 
-- OFF ?곹깭?먯꽌--?섏씠吏--李⑤떒 由ъ뒪?덈뒗 怨꾩냽 臾대젰?붾맗?덈떎. (?대? ?깅줉--sentinel? no-op?대?濡--ъ슜?먭? 泥닿컧?섎뒗 ?숈옉?먮뒗 ?곹뼢--?놁뒿?덈떎.)
-- OFF --?덈줈怨좎묠?섍굅--?ㅻⅨ ?섏씠吏濡--대룞?섎㈃ ?ㅼ떆 `content-main.js`媛 ?ㅽ뻾?섏뼱 MAIN ?⑥튂媛 ?곸슜?⑸땲--
+---
 
-**?꾩쟾--OFF瑜--먰븷 寃쎌슦** `chrome://extensions`?먯꽌 ?뺤옣 ?먯껜瑜?鍮꾪솢?깊솕?섍굅-- OFF --?섏씠吏瑜--덈줈怨좎묠?섎㈃ ?ㅼ쓬 濡쒕뱶遺--MAIN ?⑥튂--鍮꾪솢?깊솕?⑸땲--
+## 🔒 Privacy & Security
 
-## 濡쒖뺄 ?ㅼ튂
+* **Zero External Communication**: Does not perform any network requests, analytics, telemetry, or remote code execution.
+* **In-Memory Capture Processing**: Screen crop pixels are held in memory solely during OCR execution and are immediately discarded.
+* **Opt-In Local History**: OCR history is disabled by default. If enabled, only plain text is stored locally (`chrome.storage.local`, max 20 items / 30 days) and never synced.
 
-1. Chrome?먯꽌 `chrome://extensions`瑜--쎈땲--
-2. ?ㅻⅨ履--?**Developer mode**瑜?耳?땲--
-3. **Load unpacked**瑜--꾨쫭?덈떎.
-4. --??μ냼 ?대뜑瑜--좏깮?⑸땲--
+---
 
-蹂꾨룄 鍮뚮뱶--`npm install`? ?꾩슂?섏? ?딆뒿?덈떎.
+## 🧪 Testing & Verification
 
-## ?섎룞 ?뚯뒪--
+Unit tests and release gates are provided out of the box:
 
-`tests/manual/blocked-page.html`--釉뚮씪?곗?濡--댁뼱 ?ㅼ쓬--?뺤씤?⑸땲--
+```powershell
+# Run all unit tests (Node.js test runner)
+node --test tests/unit/*.test.js
 
-### 湲곕낯 ?쒕굹由ъ삤
+# Run release-gate verification script
+.\scripts\verify.ps1
+```
 
-- ?뺤옣 ON: ?고겢由?硫붾돱媛 ?대━?붿? ?뺤씤 (?뱀뀡 1)
-- ?뺤옣 ON: `user-select: none` ?띿뒪?멸? ?좏깮?섎뒗吏 ?뺤씤 (?뱀뀡 1)
-- ?뺤옣 ON: 蹂듭궗 李⑤떒--?꾪솕?섎뒗吏 ?뺤씤 (?뱀뀡 1)
-- ?뺤옣 OFF: ?뺤옣 CSS? ?대깽--媛쒖엯--?쒓굅?섎뒗吏 ?뺤씤
+---
+---
 
-### ?좉퇋 ?쒕굹由ъ삤 (v0.1.0 ?뺤옣)
+# 🇰🇷 한국어 요약 (Korean Summary)
 
-- ?뱀뀡 2: ?대?吏瑜--곗뒪?ы깙?쇰줈 ?쒕옒洹명빐 ?--媛?ν븳吏 ?뺤씤
-- ?뱀뀡 3: ?좏깮--?띿뒪?몃? ?쒕∼ ?곸뿭--?쒕∼ 媛?ν븳吏 ?뺤씤
-- ?뱀뀡 4: 李⑤떒 ?ㅻ쾭?덉씠 div ?꾨옒--蹂몃Ц ?띿뒪--?고겢由--좏깮 媛?ν븳吏 ?뺤씤
-- ?뱀뀡 5: 紐⑤컮--?ㅺ린湲?紐⑤컮--?먮--덉씠?섏뿉--?대?吏 湲멸쾶 ?꾨Ⅴ湲--?而⑦뀓?ㅽ듃 硫붾돱 ?⑤뒗吏 ?뺤씤
-- "?숈쟻 李⑤떒 ?붿냼 異붽?" / "?숈쟻 李⑤떒 ?ㅻ쾭?덉씠 異붽?" 踰꾪듉?쇰줈 MutationObserver ?숈옉 ?뺤씤
-- "?ㅽ뻾 ?듦퀎 蹂닿린" 踰꾪듉?쇰줈 `window.__rightClickOnWebStats` ?몄텧媛--뺤씤
+## 📌 개요
+**Right-click on Web**은 웹페이지에서 텍스트 선택, 우클릭, 복사, 드래그를 차단하는 스크립트를 원천 무력화하고, 선택할 수 없는 이미지 및 화면 속 글자를 **100% 기기 내 로컬 WASM OCR**로 추출하는 브라우저 확장 프로그램입니다.
 
-### v0.2.0 ?좉퇋 ?쒕굹由ъ삤
+## ✨ 핵심 기능
+1. **강력한 차단 해제 (이중 스크립트 엔진)**:
+   - `MAIN world` 프로토타입 패치로 페이지 스크립트 실행 전에 차단 리스너 및 Closed Shadow DOM을 선제 무력화.
+   - `ISOLATED world` 인터셉터로 인라인 차단 속성 제거, 우클릭/드래그/복사 단축키(`Ctrl+C`, `Ctrl+A` 등) 복원.
+2. **100% 온디바이스 오프라인 WASM OCR**:
+   - 외부 서버 통신 없이 브라우저 내 오프스크린 문서에서 Tesseract.js WASM + 한국어/영어 로컬 모델로 텍스트 추출.
+   - 단축키 (<kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd>) 화면 영역 드래그 캡처 및 이미지 우클릭 즉시 OCR 지원.
+3. **스마트 OCR 결과 편집기**:
+   - 추출된 텍스트의 불필요한 줄바꿈/하이픈 자동 정리, 사용자 교정 사전, 찾기/바꾸기, 실행 취소(Undo/Redo) 지원.
+4. **도메인별 세밀한 제어 & 사이드 패널**:
+   - 사이트별 개별 ON/OFF, 임시 세션 모드, Lite/Ultimate 모드, 브라우저 간 설정 동기화.
+   - Chrome 사이드 패널에서 웹서핑과 동시에 OCR 결과 편집 및 도메인 설정 관리.
+5. **완벽한 개인정보 보호**:
+   - 원격 통신 0, 텔레메트리 0, 데이터 수집 0. 캡처 픽셀은 메모리에서 처리 후 즉시 파기.
 
-- ?뱀뀡 6: "?ы썑 李⑤떒 由ъ뒪--?깅줉" 踰꾪듉--?꾨Ⅸ --?고겢由--?`preventDefault`媛 臾대젰?붾릺--而⑦뀓?ㅽ듃 硫붾돱媛 ?좎빞 --(MAIN world `addEventListener` ?⑥튂)
-- ?뱀뀡 7: "二쇨린--?щ컮?몃뵫 ?쒖옉" 踰꾪듉--?꾨Ⅸ --?고겢由?蹂듭궗 --李⑤떒--?由--곹깭媛 ?좎--섏뼱---- ?듦퀎 ?⑤꼸--`periodicRescans` 移댁슫?곌? 利앷--섎뒗吏 ?뺤씤
-- ?뱀뀡 8: "Closed Shadow Host ?앹꽦" 踰꾪듉 --?듦퀎 ?⑤꼸--`shadowRootsScanned` 移댁슫?곌? 利앷--섎뒗吏 ?뺤씤
+## 🚀 설치 방법
+1. 저장소를 클론하거나 ZIP 다운로드 후 압축 해제.
+2. Chrome에서 `chrome://extensions` 접속 후 우측 상단 **[개발자 모드]** 활성화.
+3. **[압축해제된 확장 프로그램을 로드합니다]**를 클릭하고 본 저장소 폴더 선택.
 
-## ?붿옄--諛⑺뼢
+---
 
-?앹뾽 UI--怨듭떇 ?곹몴--濡쒓퀬瑜--ъ슜?섏? ?딄퀬, ?덈뱶/釉붾옓/移대낯 吏덇컧/怨⑤뱶 ?≪꽱--湲곕컲--?꾨━誘몄뾼 紐⑦꽣?ㅽ룷痢?遺꾩쐞湲곕줈 援ъ꽦?덉뒿?덈떎.
+## 📄 License
+This project is licensed under the [MIT License](LICENSE).

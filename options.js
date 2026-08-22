@@ -3,6 +3,11 @@
 const SHARED = globalThis.RIGHT_CLICK_ON_WEB_SHARED;
 const OCR_SESSION = globalThis.RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS;
 const OCR_HISTORY = globalThis.RIGHT_CLICK_ON_WEB_OCR_HISTORY;
+const OCR_TEXT = globalThis.RIGHT_CLICK_ON_WEB_OCR_TEXT_UTILS;
+const CORRECTION_KEY = 'rcowOcrCorrectionDictionary';
+const CORRECTION_MAX_ENTRIES = 200;
+const CORRECTION_MAX_BYTES = 65536;
+const UNDO_STACK_SIZE = 50;
 const state = {
   globalEnabled: true,
   domainSettings: {},
@@ -21,7 +26,15 @@ const state = {
   ocrRerunInFlight: false,
   ocrHistoryEnabled: false,
   ocrHistory: [],
-  theme: SHARED.DEFAULT_THEME
+  theme: SHARED.DEFAULT_THEME,
+  ocrUndoStack: [],
+  ocrRedoStack: [],
+  ocrCorrectionEnabled: false,
+  ocrCorrectionDictionary: [],
+  ocrFindVisible: false,
+  ocrFindCurrent: 0,
+  ocrFindMatches: [],
+  ocrCleanupRules: { ...OCR_TEXT.DEFAULT_CLEANUP_PLAN }
 };
 
 const elements = {
@@ -41,8 +54,17 @@ const elements = {
   ocrEmptyState: document.getElementById('ocrEmptyState'),
   ocrConfidenceRow: document.getElementById('ocrConfidenceRow'),
   ocrConfidenceValue: document.getElementById('ocrConfidenceValue'),
+  ocrConfidenceGrade: document.getElementById('ocrConfidenceGrade'),
   ocrConfidenceWarning: document.getElementById('ocrConfidenceWarning'),
   ocrCropSize: document.getElementById('ocrCropSize'),
+  ocrDetailControls: document.getElementById('ocrDetailControls'),
+  ocrDetailShowAverage: document.getElementById('ocrDetailShowAverage'),
+  ocrDetailFilterLow: document.getElementById('ocrDetailFilterLow'),
+  ocrDetailViewLines: document.getElementById('ocrDetailViewLines'),
+  ocrDetailViewWords: document.getElementById('ocrDetailViewWords'),
+  ocrDetailStale: document.getElementById('ocrDetailStale'),
+  ocrDetailList: document.getElementById('ocrDetailList'),
+  ocrDetailEmpty: document.getElementById('ocrDetailEmpty'),
   ocrOriginalText: document.getElementById('ocrOriginalText'),
   ocrEditedText: document.getElementById('ocrEditedText'),
   ocrEditDirty: document.getElementById('ocrEditDirty'),
@@ -56,6 +78,9 @@ const elements = {
   ocrDismissBannerBtn: document.getElementById('ocrDismissBannerBtn'),
   ocrRerunBtn: document.getElementById('ocrRerunBtn'),
   ocrRerunNote: document.getElementById('ocrRerunNote'),
+  ocrRecommendationSection: document.getElementById('ocrRecommendationSection'),
+  ocrRecommendationBtn: document.getElementById('ocrRecommendationBtn'),
+  ocrRecommendationNote: document.getElementById('ocrRecommendationNote'),
   ocrHistorySaveBtn: document.getElementById('ocrHistorySaveBtn'),
   ocrHistorySaveNote: document.getElementById('ocrHistorySaveNote'),
   ocrHistoryToggle: document.getElementById('ocrHistoryToggle'),
@@ -65,6 +90,36 @@ const elements = {
   ocrHistoryDeleteAllBtn: document.getElementById('ocrHistoryDeleteAllBtn'),
   ocrHistoryDisableDeleteBtn: document.getElementById('ocrHistoryDisableDeleteBtn'),
   ocrHistoryStatus: document.getElementById('ocrHistoryStatus'),
+  ocrCorrectionSection: document.getElementById('ocrCorrectionSection'),
+  ocrCorrectionToggle: document.getElementById('ocrCorrectionToggle'),
+  ocrCorrectionControls: document.getElementById('ocrCorrectionControls'),
+  ocrCorrectionFrom: document.getElementById('ocrCorrectionFrom'),
+  ocrCorrectionTo: document.getElementById('ocrCorrectionTo'),
+  ocrCorrectionAddBtn: document.getElementById('ocrCorrectionAddBtn'),
+  ocrCorrectionAddStatus: document.getElementById('ocrCorrectionAddStatus'),
+  ocrCorrectionCount: document.getElementById('ocrCorrectionCount'),
+  ocrCorrectionClearAllBtn: document.getElementById('ocrCorrectionClearAllBtn'),
+  ocrCorrectionList: document.getElementById('ocrCorrectionList'),
+  ocrCorrectionStatus: document.getElementById('ocrCorrectionStatus'),
+  ocrCleanupRulesSection: document.getElementById('ocrCleanupRulesSection'),
+  ocrCleanupToggleAllBtn: document.getElementById('ocrCleanupToggleAllBtn'),
+  ocrCleanupRulesList: document.getElementById('ocrCleanupRulesList'),
+  ocrCleanupPreviewBtn: document.getElementById('ocrCleanupPreviewBtn'),
+  ocrCleanupApplyBtn: document.getElementById('ocrCleanupApplyBtn'),
+  ocrCleanupPreviewArea: document.getElementById('ocrCleanupPreviewArea'),
+  ocrCleanupPreviewText: document.getElementById('ocrCleanupPreviewText'),
+  ocrCleanupStatus: document.getElementById('ocrCleanupStatus'),
+  ocrUndoBtn: document.getElementById('ocrUndoBtn'),
+  ocrRedoBtn: document.getElementById('ocrRedoBtn'),
+  ocrApplyCorrectionBtn: document.getElementById('ocrApplyCorrectionBtn'),
+  ocrFindReplaceRow: document.getElementById('ocrFindReplaceRow'),
+  ocrFindInput: document.getElementById('ocrFindInput'),
+  ocrReplaceInput: document.getElementById('ocrReplaceInput'),
+  ocrFindPrevBtn: document.getElementById('ocrFindPrevBtn'),
+  ocrFindNextBtn: document.getElementById('ocrFindNextBtn'),
+  ocrFindCounter: document.getElementById('ocrFindCounter'),
+  ocrReplaceCurrentBtn: document.getElementById('ocrReplaceCurrentBtn'),
+  ocrReplaceAllBtn: document.getElementById('ocrReplaceAllBtn'),
   optThemeDark: document.getElementById('optThemeDark'),
   optThemeNeon: document.getElementById('optThemeNeon'),
   optThemeLight: document.getElementById('optThemeLight')
@@ -126,6 +181,26 @@ async function handleThemeSelect(theme) {
   }
 }
 
+function handleThemeKeydown(event) {
+  const keyboard = globalThis.RIGHT_CLICK_ON_WEB_KEYBOARD_UTILS;
+  if (!keyboard || typeof keyboard.getNextValueFromKeydown !== 'function') return;
+  const buttons = [
+    { el: elements.optThemeDark, id: SHARED.THEME_DARK },
+    { el: elements.optThemeNeon, id: SHARED.THEME_NEON },
+    { el: elements.optThemeLight, id: SHARED.THEME_LIGHT }
+  ].filter(({ el }) => Boolean(el));
+  const current = buttons.find(({ el }) => el === event.currentTarget);
+  if (!current) return;
+  const nextTheme = keyboard.getNextValueFromKeydown(buttons.map(({ id }) => id), current.id, event.key);
+  if (!nextTheme) return;
+
+  event.preventDefault();
+  const next = buttons.find(({ id }) => id === nextTheme);
+  if (!next) return;
+  next.el.focus();
+  handleThemeSelect(nextTheme).catch(console.error);
+}
+
 function sessionStorageArea() {
   const session = chrome.storage && chrome.storage.session;
   return session && typeof session.get === 'function' ? session : null;
@@ -146,6 +221,11 @@ async function loadOcrState() {
 }
 
 const LOW_CONFIDENCE_THRESHOLD = 70;
+const HIGH_CONFIDENCE_THRESHOLD = 85;
+
+let ocrDetailShowAverage = false;
+let ocrDetailFilterLow = false;
+let ocrDetailView = 'lines';
 
 function showOcrCopyToast(message, isError = false) {
   if (!elements.ocrCopyToast) return;
@@ -188,8 +268,10 @@ function handleOcrSelectAll() {
 function handleOcrCleanup() {
   if (!elements.ocrEditedText) return;
   const current = elements.ocrEditedText.value;
-  const cleaned = cleanupWhitespace(current);
+  const result = OCR_TEXT.applyCleanupPlan(current, state.ocrCleanupRules);
+  const cleaned = result.text;
   if (cleaned !== current) {
+    pushUndo(current);
     elements.ocrEditedText.value = cleaned;
     state.ocrEditedText = cleaned;
     state.ocrIsDirty = cleaned !== state.ocrOriginalText;
@@ -199,10 +281,21 @@ function handleOcrCleanup() {
 
 function handleOcrRestore() {
   if (!elements.ocrEditedText) return;
+  pushUndo(elements.ocrEditedText.value);
   elements.ocrEditedText.value = state.ocrOriginalText;
   state.ocrEditedText = state.ocrOriginalText;
   state.ocrIsDirty = false;
+  state.ocrFindMatches = [];
+  state.ocrFindCurrent = 0;
+  state.ocrCleanupRules = { ...OCR_TEXT.DEFAULT_CLEANUP_PLAN };
   elements.ocrEditDirty.classList.add('is-hidden');
+  elements.ocrFindReplaceRow?.classList.add('is-hidden');
+  elements.ocrCleanupRulesSection?.classList.remove('is-hidden');
+  if (elements.ocrFindInput) elements.ocrFindInput.value = '';
+  if (elements.ocrReplaceInput) elements.ocrReplaceInput.value = '';
+  updateFindCounter();
+  renderUndoRedoButtons();
+  renderCleanupRulesUI();
 }
 
 function handleEditedTextChange() {
@@ -210,6 +303,448 @@ function handleEditedTextChange() {
   state.ocrEditedText = elements.ocrEditedText.value;
   state.ocrIsDirty = elements.ocrEditedText.value !== state.ocrOriginalText;
   elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  state.ocrRedoStack = [];
+  renderUndoRedoButtons();
+}
+
+function pushUndo(text) {
+  if (!text) return;
+  if (state.ocrUndoStack.length >= UNDO_STACK_SIZE) {
+    state.ocrUndoStack.shift();
+  }
+  state.ocrUndoStack.push(text);
+  state.ocrRedoStack = [];
+  renderUndoRedoButtons();
+}
+
+function renderUndoRedoButtons() {
+  if (elements.ocrUndoBtn) {
+    elements.ocrUndoBtn.disabled = state.ocrUndoStack.length === 0;
+  }
+  if (elements.ocrRedoBtn) {
+    elements.ocrRedoBtn.disabled = state.ocrRedoStack.length === 0;
+  }
+}
+
+function handleUndo() {
+  if (state.ocrUndoStack.length === 0) return;
+  const current = elements.ocrEditedText?.value || '';
+  const previous = state.ocrUndoStack.pop();
+  if (current !== previous) {
+    state.ocrRedoStack.push(current);
+  }
+  if (elements.ocrEditedText) {
+    elements.ocrEditedText.value = previous;
+  }
+  state.ocrEditedText = previous;
+  state.ocrIsDirty = previous !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  renderUndoRedoButtons();
+}
+
+function handleRedo() {
+  if (state.ocrRedoStack.length === 0) return;
+  const current = elements.ocrEditedText?.value || '';
+  const next = state.ocrRedoStack.pop();
+  if (current !== next) {
+    state.ocrUndoStack.push(current);
+  }
+  if (elements.ocrEditedText) {
+    elements.ocrEditedText.value = next;
+  }
+  state.ocrEditedText = next;
+  state.ocrIsDirty = next !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  renderUndoRedoButtons();
+}
+
+function renderCleanupRulesUI() {
+  if (!elements.ocrCleanupRulesList) return;
+  if (elements.ocrCleanupRulesList.children.length === 0) {
+    const ruleLabels = {
+      removeZeroWidthChars: '공백 문자 제거',
+      normalizeSpaces: '공백 정규화',
+      normalizePunctuationSpacing: '문장부호 간격',
+      joinHyphenatedLines: '줄 끝 Hyphen 연결',
+      joinWrappedParagraphs: '자동 줄 바꿈 연결',
+      collapseBlankLines: '연속 빈 줄 축소'
+    };
+    for (const ruleKey of Object.keys(ruleLabels)) {
+      const label = document.createElement('label');
+      label.className = 'ocr-cleanup-rule-label';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ocr-cleanup-rule-checkbox';
+      cb.setAttribute('data-rule', ruleKey);
+      cb.checked = Boolean(state.ocrCleanupRules[ruleKey]);
+      cb.addEventListener('change', handleCleanupRuleToggle);
+      label.append(cb, ruleLabels[ruleKey]);
+      elements.ocrCleanupRulesList.append(label);
+    }
+  }
+  const checkboxes = elements.ocrCleanupRulesList.querySelectorAll('.ocr-cleanup-rule-checkbox');
+  for (const cb of checkboxes) {
+    const rule = cb.getAttribute('data-rule');
+    if (rule && Object.prototype.hasOwnProperty.call(state.ocrCleanupRules, rule)) {
+      cb.checked = Boolean(state.ocrCleanupRules[rule]);
+    }
+  }
+  const anyEnabled = Object.values(state.ocrCleanupRules).some(Boolean);
+  if (elements.ocrCleanupPreviewBtn) elements.ocrCleanupPreviewBtn.disabled = !anyEnabled;
+  if (elements.ocrCleanupApplyBtn) elements.ocrCleanupApplyBtn.disabled = !anyEnabled;
+  if (elements.ocrCleanupPreviewArea) elements.ocrCleanupPreviewArea.classList.add('is-hidden');
+}
+
+function handleCleanupRuleToggle(e) {
+  const cb = e.target;
+  const rule = cb.getAttribute('data-rule');
+  if (!rule || !Object.prototype.hasOwnProperty.call(state.ocrCleanupRules, rule)) return;
+  state.ocrCleanupRules[rule] = cb.checked;
+  const anyEnabled = Object.values(state.ocrCleanupRules).some(Boolean);
+  if (elements.ocrCleanupPreviewBtn) elements.ocrCleanupPreviewBtn.disabled = !anyEnabled;
+  if (elements.ocrCleanupApplyBtn) elements.ocrCleanupApplyBtn.disabled = !anyEnabled;
+}
+
+function handleCleanupToggleAll() {
+  const anyDisabled = Object.values(state.ocrCleanupRules).some(v => !v);
+  const newValue = anyDisabled;
+  for (const rule of Object.keys(state.ocrCleanupRules)) {
+    state.ocrCleanupRules[rule] = newValue;
+  }
+  renderCleanupRulesUI();
+}
+
+function handleCleanupPreview() {
+  const current = elements.ocrEditedText?.value || '';
+  const result = OCR_TEXT.applyCleanupPlan(current, state.ocrCleanupRules);
+  if (elements.ocrCleanupPreviewText) {
+    elements.ocrCleanupPreviewText.textContent = result.text || '(결과 없음)';
+  }
+  if (elements.ocrCleanupPreviewArea) elements.ocrCleanupPreviewArea.classList.remove('is-hidden');
+  if (elements.ocrCleanupStatus) {
+    if (result.appliedRules.length > 0) {
+      elements.ocrCleanupStatus.textContent = `적용: ${result.appliedRules.join(', ')}`;
+    } else {
+      elements.ocrCleanupStatus.textContent = '변경 사항 없음';
+    }
+  }
+}
+
+function handleCleanupApply() {
+  const current = elements.ocrEditedText?.value || '';
+  pushUndo(current);
+  const result = OCR_TEXT.applyCleanupPlan(current, state.ocrCleanupRules);
+  const cleaned = result.text;
+  if (elements.ocrEditedText) {
+    elements.ocrEditedText.value = cleaned;
+  }
+  state.ocrEditedText = cleaned;
+  state.ocrIsDirty = cleaned !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  if (elements.ocrCleanupPreviewArea) elements.ocrCleanupPreviewArea.classList.add('is-hidden');
+  if (elements.ocrCleanupStatus) {
+    elements.ocrCleanupStatus.textContent = result.appliedRules.length > 0
+      ? `규칙 적용 완료: ${result.appliedRules.join(', ')}`
+      : '변경 사항 없음';
+  }
+}
+
+function literalReplace(text, find, replace) {
+  if (!find) return { result: text, count: 0 };
+  let index = 0;
+  let count = 0;
+  const result = [];
+  while (index < text.length) {
+    const pos = text.indexOf(find, index);
+    if (pos === -1) break;
+    result.push(text.slice(index, pos), replace);
+    index = pos + find.length;
+    count++;
+  }
+  result.push(text.slice(index));
+  return { result: result.join(''), count };
+}
+
+function ocrFind() {
+  const find = elements.ocrFindInput?.value || '';
+  if (!find) {
+    state.ocrFindMatches = [];
+    state.ocrFindCurrent = 0;
+    updateFindCounter();
+    return;
+  }
+  const text = elements.ocrEditedText?.value || '';
+  const { result, count } = literalReplace(text, find, '\x00'.repeat(find.length));
+  const positions = [];
+  let pos = 0;
+  while (pos < result.length) {
+    pos = result.indexOf('\x00', pos);
+    if (pos === -1) break;
+    positions.push(pos);
+    pos += find.length;
+  }
+  state.ocrFindMatches = positions;
+  state.ocrFindCurrent = 0;
+  updateFindCounter();
+  if (state.ocrFindMatches.length > 0) {
+    highlightFindMatch(0);
+  }
+}
+
+function updateFindCounter() {
+  if (!elements.ocrFindCounter) return;
+  const count = state.ocrFindMatches.length;
+  if (count === 0) {
+    elements.ocrFindCounter.textContent = '';
+  } else {
+    elements.ocrFindCounter.textContent = `${state.ocrFindCurrent + 1}/${count}`;
+  }
+  if (elements.ocrFindPrevBtn) elements.ocrFindPrevBtn.disabled = count === 0;
+  if (elements.ocrFindNextBtn) elements.ocrFindNextBtn.disabled = count === 0;
+  if (elements.ocrReplaceCurrentBtn) elements.ocrReplaceCurrentBtn.disabled = count === 0;
+  if (elements.ocrReplaceAllBtn) elements.ocrReplaceAllBtn.disabled = count === 0;
+}
+
+function highlightFindMatch(index) {
+  updateFindCounter();
+}
+
+function handleFindInput() {
+  ocrFind();
+}
+
+function handleFindPrev() {
+  if (state.ocrFindMatches.length === 0) return;
+  state.ocrFindCurrent = (state.ocrFindCurrent - 1 + state.ocrFindMatches.length) % state.ocrFindMatches.length;
+  highlightFindMatch(state.ocrFindCurrent);
+}
+
+function handleFindNext() {
+  if (state.ocrFindMatches.length === 0) return;
+  state.ocrFindCurrent = (state.ocrFindCurrent + 1) % state.ocrFindMatches.length;
+  highlightFindMatch(state.ocrFindCurrent);
+}
+
+function handleReplaceCurrent() {
+  const find = elements.ocrFindInput?.value || '';
+  const replace = elements.ocrReplaceInput?.value || '';
+  if (!find || state.ocrFindMatches.length === 0) return;
+  const current = elements.ocrEditedText?.value || '';
+  pushUndo(current);
+  const pos = state.ocrFindMatches[state.ocrFindCurrent];
+  const next = current.slice(0, pos) + replace + current.slice(pos + find.length);
+  if (elements.ocrEditedText) elements.ocrEditedText.value = next;
+  state.ocrEditedText = next;
+  state.ocrIsDirty = next !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  ocrFind();
+}
+
+function handleReplaceAll() {
+  const find = elements.ocrFindInput?.value || '';
+  const replace = elements.ocrReplaceInput?.value || '';
+  if (!find) return;
+  const current = elements.ocrEditedText?.value || '';
+  pushUndo(current);
+  const { result } = literalReplace(current, find, replace);
+  if (elements.ocrEditedText) elements.ocrEditedText.value = result;
+  state.ocrEditedText = result;
+  state.ocrIsDirty = result !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  ocrFind();
+}
+
+function renderCorrectionApplyButton() {
+  if (!elements.ocrApplyCorrectionBtn) return;
+  const enabled = state.ocrCorrectionEnabled && state.ocrCorrectionDictionary.length > 0;
+  elements.ocrApplyCorrectionBtn.disabled = !enabled;
+}
+
+function handleApplyCorrection() {
+  if (!state.ocrCorrectionEnabled || state.ocrCorrectionDictionary.length === 0) return;
+  applyCorrectionToEdited();
+}
+
+async function loadCorrectionDictionary() {
+  try {
+    const result = await chrome.storage.local.get(CORRECTION_KEY);
+    const raw = result[CORRECTION_KEY];
+    if (Array.isArray(raw)) {
+      const valid = raw.slice(0, CORRECTION_MAX_ENTRIES).filter(e =>
+        e && typeof e.from === 'string' && typeof e.to === 'string'
+      );
+      const bytes = new TextEncoder().encode(JSON.stringify(valid)).length;
+      if (bytes > CORRECTION_MAX_BYTES) {
+        state.ocrCorrectionDictionary = valid.slice(0, Math.max(1, CORRECTION_MAX_ENTRIES - 1));
+      } else {
+        state.ocrCorrectionDictionary = valid;
+      }
+    }
+  } catch (_) {
+    state.ocrCorrectionDictionary = [];
+  }
+}
+
+async function saveCorrectionDictionary() {
+  try {
+    const serialized = state.ocrCorrectionDictionary;
+    const bytes = new TextEncoder().encode(JSON.stringify(serialized)).length;
+    if (bytes > CORRECTION_MAX_BYTES) {
+      if (elements.ocrCorrectionAddStatus) {
+        elements.ocrCorrectionAddStatus.textContent = `저장 용량 초과 (${bytes} > ${CORRECTION_MAX_BYTES})`;
+      }
+      return false;
+    }
+    await chrome.storage.local.set({ [CORRECTION_KEY]: serialized });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function handleCorrectionToggle() {
+  state.ocrCorrectionEnabled = !state.ocrCorrectionEnabled;
+  if (state.ocrCorrectionEnabled) {
+    elements.ocrCorrectionControls?.classList.remove('is-hidden');
+    elements.ocrCorrectionToggle.textContent = 'ON';
+    elements.ocrCorrectionToggle.classList.remove('is-off');
+  } else {
+    elements.ocrCorrectionControls?.classList.add('is-hidden');
+    elements.ocrCorrectionToggle.textContent = 'OFF';
+    elements.ocrCorrectionToggle.classList.add('is-off');
+  }
+  elements.ocrCorrectionToggle.setAttribute('aria-pressed', String(state.ocrCorrectionEnabled));
+  renderCorrectionApplyButton();
+}
+
+function renderCorrectionList() {
+  if (!elements.ocrCorrectionList) return;
+  elements.ocrCorrectionList.replaceChildren();
+  if (elements.ocrCorrectionCount) {
+    elements.ocrCorrectionCount.textContent = `항목 ${state.ocrCorrectionDictionary.length} / ${CORRECTION_MAX_ENTRIES}`;
+  }
+  for (const [index, entry] of state.ocrCorrectionDictionary.entries()) {
+    const item = document.createElement('div');
+    item.className = 'ocr-correction-entry';
+    const from = document.createElement('span');
+    from.className = 'ocr-correction-entry-from';
+    from.textContent = entry.from;
+    const arrow = document.createElement('span');
+    arrow.className = 'ocr-correction-entry-arrow';
+    arrow.textContent = '→';
+    const to = document.createElement('span');
+    to.className = 'ocr-correction-entry-to';
+    to.textContent = entry.to;
+    const remove = document.createElement('button');
+    remove.className = 'ocr-correction-entry-remove';
+    remove.type = 'button';
+    remove.textContent = '삭제';
+    remove.addEventListener('click', () => handleCorrectionRemove(index));
+    item.append(from, arrow, to, remove);
+    elements.ocrCorrectionList.append(item);
+  }
+}
+
+function handleCorrectionInputChange() {
+  const from = elements.ocrCorrectionFrom?.value || '';
+  const to = elements.ocrCorrectionTo?.value || '';
+  if (elements.ocrCorrectionAddBtn) {
+    elements.ocrCorrectionAddBtn.disabled = !from || !to;
+  }
+}
+
+async function handleCorrectionAdd() {
+  const from = elements.ocrCorrectionFrom?.value || '';
+  const to = elements.ocrCorrectionTo?.value || '';
+  if (!from || !to) return;
+  if (state.ocrCorrectionDictionary.length >= CORRECTION_MAX_ENTRIES) {
+    if (elements.ocrCorrectionAddStatus) {
+      elements.ocrCorrectionAddStatus.textContent = `항목 수 초과 (${CORRECTION_MAX_ENTRIES}개 최대)`;
+    }
+    return;
+  }
+  const exists = state.ocrCorrectionDictionary.some(e => e.from === from);
+  if (exists) {
+    if (elements.ocrCorrectionAddStatus) {
+      elements.ocrCorrectionAddStatus.textContent = `이미 존재하는 원문: "${from}"`;
+    }
+    return;
+  }
+  state.ocrCorrectionDictionary.push({ from, to });
+  const saved = await saveCorrectionDictionary();
+  if (saved) {
+    if (elements.ocrCorrectionAddStatus) {
+      elements.ocrCorrectionAddStatus.textContent = `"${from}" → "${to}" 추가됨`;
+    }
+    if (elements.ocrCorrectionFrom) elements.ocrCorrectionFrom.value = '';
+    if (elements.ocrCorrectionTo) elements.ocrCorrectionTo.value = '';
+    if (elements.ocrCorrectionAddBtn) elements.ocrCorrectionAddBtn.disabled = true;
+    renderCorrectionList();
+    renderCorrectionApplyButton();
+  } else {
+    state.ocrCorrectionDictionary.pop();
+    if (elements.ocrCorrectionAddStatus) {
+      elements.ocrCorrectionAddStatus.textContent = '저장 실패: 용량 초과 또는 다른 오류';
+    }
+  }
+}
+
+async function handleCorrectionRemove(index) {
+  const entry = state.ocrCorrectionDictionary[index];
+  if (!entry) return;
+  state.ocrCorrectionDictionary.splice(index, 1);
+  const saved = await saveCorrectionDictionary();
+  if (saved) {
+    if (elements.ocrCorrectionStatus) {
+      elements.ocrCorrectionStatus.textContent = `"${entry.from}" 삭제됨`;
+    }
+    renderCorrectionList();
+    renderCorrectionApplyButton();
+  } else {
+    state.ocrCorrectionDictionary.splice(index, 0, entry);
+    if (elements.ocrCorrectionStatus) {
+      elements.ocrCorrectionStatus.textContent = '삭제 실패';
+    }
+  }
+}
+
+async function handleCorrectionClearAll() {
+  if (typeof window.confirm === 'function' && !window.confirm('모든 교정 항목을 삭제하시겠습니까?')) {
+    return;
+  }
+  const previous = [...state.ocrCorrectionDictionary];
+  state.ocrCorrectionDictionary = [];
+  const saved = await saveCorrectionDictionary();
+  if (saved) {
+    if (elements.ocrCorrectionStatus) {
+      elements.ocrCorrectionStatus.textContent = '모든 항목을 삭제했습니다.';
+    }
+    renderCorrectionList();
+    renderCorrectionApplyButton();
+  } else {
+    state.ocrCorrectionDictionary = previous;
+    if (elements.ocrCorrectionStatus) {
+      elements.ocrCorrectionStatus.textContent = '삭제 실패';
+    }
+  }
+}
+
+function applyCorrectionToEdited() {
+  if (!state.ocrCorrectionEnabled || state.ocrCorrectionDictionary.length === 0) return;
+  const current = elements.ocrEditedText?.value || '';
+  pushUndo(current);
+  let text = current;
+  for (const { from, to } of state.ocrCorrectionDictionary) {
+    const { result } = literalReplace(text, from, to);
+    text = result;
+  }
+  if (elements.ocrEditedText) elements.ocrEditedText.value = text;
+  state.ocrEditedText = text;
+  state.ocrIsDirty = text !== state.ocrOriginalText;
+  elements.ocrEditDirty.classList.toggle('is-hidden', !state.ocrIsDirty);
+  if (elements.ocrCorrectionStatus) {
+    elements.ocrCorrectionStatus.textContent = '교정 사전 적용 완료';
+  }
 }
 
 function handleOcrAcceptNew() {
@@ -222,10 +757,25 @@ function handleOcrAcceptNew() {
     state.ocrPendingNewResult = null;
     state.ocrPendingNewResultText = null;
     state.ocrDismissedResultText = null;
+    state.ocrUndoStack = [];
+    state.ocrRedoStack = [];
+    state.ocrFindMatches = [];
+    state.ocrFindCurrent = 0;
+    state.ocrCleanupRules = { ...OCR_TEXT.DEFAULT_CLEANUP_PLAN };
     if (elements.ocrEditedText) elements.ocrEditedText.value = state.ocrEditedText;
     if (elements.ocrOriginalText) elements.ocrOriginalText.textContent = state.ocrOriginalText;
     if (elements.ocrEditDirty) elements.ocrEditDirty.classList.add('is-hidden');
     elements.ocrNewResultBanner?.classList.add('is-hidden');
+    elements.ocrFindReplaceRow?.classList.add('is-hidden');
+    elements.ocrCleanupRulesSection?.classList.remove('is-hidden');
+    renderOcrConfidenceGrade(Math.round(state.ocrDisplayedResult?.confidence?.average || 0));
+    renderOcrDetailPanel();
+    renderUndoRedoButtons();
+    renderCleanupRulesUI();
+    if (elements.ocrFindInput) elements.ocrFindInput.value = '';
+    if (elements.ocrReplaceInput) elements.ocrReplaceInput.value = '';
+    updateFindCounter();
+    checkOcrContextStale().catch(() => {});
   }
 }
 
@@ -252,6 +802,60 @@ function renderOcrRerun() {
       : '마지막 수동 영역 OCR이 없습니다. 확장 아이콘에서 영역을 선택하면 준비됩니다.');
 }
 
+function renderOcrRecommendation() {
+  const result = state.ocrDisplayedResult;
+  const profile = result?.recommendedProfile;
+  const available = Boolean(profile && result?.metadata && !state.ocrRerunInFlight);
+  elements.ocrRecommendationSection.classList.toggle('is-hidden', !profile);
+  elements.ocrRecommendationBtn.disabled = !available;
+  elements.ocrRecommendationNote.textContent = profile
+    ? `시도하지 않은 최저 비용 전처리 ${profile}을(를) 새 캡처로 다시 실행합니다.`
+    : '';
+}
+
+async function handleOcrRecommendation() {
+  const result = state.ocrDisplayedResult;
+  if (state.ocrRerunInFlight || !result?.recommendedProfile || !result?.metadata) return;
+  state.ocrRerunInFlight = true;
+  renderOcrRerun();
+  renderOcrRecommendation();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'rcow:rerunOcrBboxOnActiveTab',
+      bbox: { x0: 0, y0: 0, x1: result.crop.width, y1: result.crop.height },
+      preprocessingProfile: result.recommendedProfile
+    });
+    if (!response?.ok) throw new Error(response?.error || '추천 OCR 재인식에 실패했습니다.');
+  } catch (error) {
+    showOcrCopyToast(error.message || '추천 OCR 재인식에 실패했습니다.', true);
+  } finally {
+    state.ocrRerunInFlight = false;
+    renderOcrRerun();
+    renderOcrRecommendation();
+  }
+}
+
+async function handleOcrBboxRerun(bbox) {
+  const result = state.ocrDisplayedResult;
+  const profile = result?.recommendedProfile || result?.preprocessing?.profile;
+  if (state.ocrRerunInFlight || !result?.metadata || !profile) return;
+  state.ocrRerunInFlight = true;
+  renderOcrRerun();
+  renderOcrRecommendation();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'rcow:rerunOcrBboxOnActiveTab', bbox, preprocessingProfile: profile
+    });
+    if (!response?.ok) throw new Error(response?.error || '선택 영역 OCR 재인식에 실패했습니다.');
+  } catch (error) {
+    showOcrCopyToast(error.message || '선택 영역 OCR 재인식에 실패했습니다.', true);
+  } finally {
+    state.ocrRerunInFlight = false;
+    renderOcrRerun();
+    renderOcrRecommendation();
+  }
+}
+
 async function handleOcrRerun() {
   if (state.ocrRerunInFlight || !state.ocr.lastRegionRerun) {
     return;
@@ -271,20 +875,73 @@ async function handleOcrRerun() {
   }
 }
 
+function captureUndoBeforeInput(e) {
+  if (e.inputType === 'insertText' || e.inputType === 'deleteContentBackward' ||
+      e.inputType === 'deleteContentForward' || e.inputType === 'insertFromPaste' ||
+      e.inputType === 'insertFromDrop' || e.inputType === 'historyUndo' ||
+      e.inputType === 'historyRedo' || e.inputType === 'insertLineBreak' ||
+      e.inputType === 'insertParagraph' || e.inputType === 'formatSetBlockTextDirection' ||
+      e.inputType === '' || !e.inputType) {
+    const prev = elements.ocrEditedText?.value || '';
+    if (state.ocrUndoStack.length === 0 || state.ocrUndoStack[state.ocrUndoStack.length - 1] !== prev) {
+      pushUndo(prev);
+    }
+  }
+}
+
 function attachOcrEditListeners() {
   elements.ocrCopyBtn?.addEventListener('click', handleOcrCopy);
   elements.ocrSelectAllBtn?.addEventListener('click', handleOcrSelectAll);
   elements.ocrCleanupBtn?.addEventListener('click', handleOcrCleanup);
   elements.ocrRestoreBtn?.addEventListener('click', handleOcrRestore);
+  elements.ocrEditedText?.addEventListener('beforeinput', captureUndoBeforeInput);
   elements.ocrEditedText?.addEventListener('input', handleEditedTextChange);
   elements.ocrAcceptNewBtn?.addEventListener('click', handleOcrAcceptNew);
   elements.ocrDismissBannerBtn?.addEventListener('click', handleOcrDismissBanner);
   elements.ocrRerunBtn?.addEventListener('click', () => handleOcrRerun());
+  elements.ocrRecommendationBtn?.addEventListener('click', () => handleOcrRecommendation());
   elements.ocrHistorySaveBtn?.addEventListener('click', () => handleOcrHistorySave());
   elements.ocrHistoryToggle?.addEventListener('click', () => handleOcrHistoryToggle());
   elements.ocrHistoryDeleteAllBtn?.addEventListener('click', () => handleOcrHistoryDeleteAll());
   elements.ocrHistoryDisableDeleteBtn?.addEventListener('click', () => handleOcrHistoryDisableDelete());
   elements.ocrHistorySearch?.addEventListener('input', renderOcrHistory);
+  elements.ocrCorrectionToggle?.addEventListener('click', () => handleCorrectionToggle());
+  elements.ocrCorrectionAddBtn?.addEventListener('click', () => handleCorrectionAdd());
+  elements.ocrCorrectionClearAllBtn?.addEventListener('click', () => handleCorrectionClearAll());
+  elements.ocrCorrectionFrom?.addEventListener('input', () => handleCorrectionInputChange());
+  elements.ocrCorrectionTo?.addEventListener('input', () => handleCorrectionInputChange());
+  elements.ocrCleanupToggleAllBtn?.addEventListener('click', () => handleCleanupToggleAll());
+  elements.ocrCleanupPreviewBtn?.addEventListener('click', () => handleCleanupPreview());
+  elements.ocrCleanupApplyBtn?.addEventListener('click', () => handleCleanupApply());
+  elements.ocrUndoBtn?.addEventListener('click', () => handleUndo());
+  elements.ocrRedoBtn?.addEventListener('click', () => handleRedo());
+  elements.ocrApplyCorrectionBtn?.addEventListener('click', () => handleApplyCorrection());
+  elements.ocrFindInput?.addEventListener('input', () => handleFindInput());
+  elements.ocrReplaceInput?.addEventListener('input', () => {});
+  elements.ocrFindPrevBtn?.addEventListener('click', () => handleFindPrev());
+  elements.ocrFindNextBtn?.addEventListener('click', () => handleFindNext());
+  elements.ocrReplaceCurrentBtn?.addEventListener('click', () => handleReplaceCurrent());
+  elements.ocrReplaceAllBtn?.addEventListener('click', () => handleReplaceAll());
+  elements.ocrDetailShowAverage?.addEventListener('change', (e) => {
+    ocrDetailShowAverage = e.target.checked;
+    renderOcrDetailPanel();
+  });
+  elements.ocrDetailFilterLow?.addEventListener('change', (e) => {
+    ocrDetailFilterLow = e.target.checked;
+    renderOcrDetailPanel();
+  });
+  elements.ocrDetailViewLines?.addEventListener('click', () => {
+    ocrDetailView = 'lines';
+    if (elements.ocrDetailViewLines) elements.ocrDetailViewLines.setAttribute('aria-pressed', 'true');
+    if (elements.ocrDetailViewWords) elements.ocrDetailViewWords.setAttribute('aria-pressed', 'false');
+    renderOcrDetailPanel();
+  });
+  elements.ocrDetailViewWords?.addEventListener('click', () => {
+    ocrDetailView = 'words';
+    if (elements.ocrDetailViewLines) elements.ocrDetailViewLines.setAttribute('aria-pressed', 'false');
+    if (elements.ocrDetailViewWords) elements.ocrDetailViewWords.setAttribute('aria-pressed', 'true');
+    renderOcrDetailPanel();
+  });
 }
 
 async function sendOcrHistoryMessage(message) {
@@ -396,6 +1053,182 @@ function renderGlobalState() {
   elements.globalToggle.setAttribute('aria-pressed', String(state.globalEnabled));
 }
 
+function renderOcrConfidenceGrade(average) {
+  const gradeEl = elements.ocrConfidenceGrade;
+  if (!gradeEl) return;
+  const grade = average >= HIGH_CONFIDENCE_THRESHOLD
+    ? 'high'
+    : average >= LOW_CONFIDENCE_THRESHOLD
+      ? 'medium'
+      : 'low';
+  const label = grade === 'high' ? '높음' : grade === 'medium' ? '보통' : '낮음';
+  gradeEl.textContent = label;
+  gradeEl.setAttribute('data-grade', grade);
+  gradeEl.setAttribute('aria-label', `신뢰도 등급: ${label}`);
+}
+
+function getConfidenceItemGrade(confidence) {
+  return confidence >= HIGH_CONFIDENCE_THRESHOLD
+    ? 'high'
+    : confidence >= LOW_CONFIDENCE_THRESHOLD
+      ? 'medium'
+      : 'low';
+}
+
+function compareViewportStale(normalized, vpResponse) {
+  if (!vpResponse || vpResponse.ok !== true || !vpResponse.viewport) {
+    return '⚠️ 원래 탭에서 다시 시도하세요.';
+  }
+  const currentViewport = vpResponse.viewport;
+  if (
+    !Number.isFinite(currentViewport.width) || currentViewport.width <= 0 ||
+    !Number.isFinite(currentViewport.height) || currentViewport.height <= 0 ||
+    !Number.isFinite(currentViewport.dpr) || currentViewport.dpr <= 0 ||
+    currentViewport.width !== normalized.viewport.width ||
+    currentViewport.height !== normalized.viewport.height ||
+    currentViewport.dpr !== normalized.devicePixelRatio
+  ) {
+    return '⚠️ 원래 탭에서 다시 시도하세요.';
+  }
+  return null;
+}
+
+function createCheckOcrContextStale({ elements, state, OCR_SESSION, chrome, Date: DateCls, URL }) {
+  return async function checkOcrContextStaleImpl() {
+    const staleEl = elements.ocrDetailStale;
+    if (!staleEl) return;
+    const rerunMeta = state.ocr.lastRegionRerun;
+    if (!rerunMeta || !state.ocrDisplayedResult?.detail) {
+      staleEl.classList.add('is-hidden');
+      staleEl.textContent = '';
+      return;
+    }
+    const normalized = OCR_SESSION.normalizeLastRegionRerun(rerunMeta);
+    if (!normalized) {
+      staleEl.classList.add('is-hidden');
+      staleEl.textContent = '';
+      return;
+    }
+    if (!normalized.tabId || !normalized.hostname) {
+      staleEl.classList.add('is-hidden');
+      staleEl.textContent = '';
+      return;
+    }
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !tab?.url) {
+        staleEl.classList.add('is-hidden');
+        staleEl.textContent = '';
+        return;
+      }
+      const hostname = tab.url && typeof tab.url === 'string'
+        ? new URL(tab.url).hostname
+        : '';
+      if (tab.id !== normalized.tabId || hostname !== normalized.hostname) {
+        staleEl.textContent = '⚠️ 원래 탭에서 다시 시도하세요.';
+        staleEl.classList.remove('is-hidden');
+        return;
+      }
+      const now = DateCls.now();
+      if (now - normalized.timestamp > OCR_SESSION.MAX_CAPTURE_AGE_MS) {
+        staleEl.textContent = '⚠️ 저장된 OCR 결과가 너무 오래되어 다시 인식할 수 없습니다.';
+        staleEl.classList.remove('is-hidden');
+        return;
+      }
+      if (normalized.viewport && normalized.devicePixelRatio != null) {
+        let vpResponse;
+        try {
+          vpResponse = await chrome.tabs.sendMessage(normalized.tabId, { type: 'rcow:getViewport' });
+        } catch (_) {
+          staleEl.textContent = '⚠️ 원래 탭에서 다시 시도하세요.';
+          staleEl.classList.remove('is-hidden');
+          return;
+        }
+        const guidance = compareViewportStale(normalized, vpResponse);
+        if (guidance) {
+          staleEl.textContent = guidance;
+          staleEl.classList.remove('is-hidden');
+          return;
+        }
+      }
+      staleEl.classList.add('is-hidden');
+      staleEl.textContent = '';
+    } catch (_) {
+      staleEl.classList.add('is-hidden');
+      staleEl.textContent = '';
+    }
+  };
+}
+
+const checkOcrContextStale = createCheckOcrContextStale({ elements, state, OCR_SESSION, chrome, Date, URL });
+
+const MAX_DETAIL_ITEMS = 200;
+
+function renderOcrDetailPanel() {
+  const result = state.ocrDisplayedResult;
+  const detail = result?.detail;
+
+  if (!elements.ocrDetailControls || !elements.ocrDetailList || !elements.ocrDetailEmpty) return;
+
+  if (!ocrDetailShowAverage || !detail || (!detail.lines?.length && !detail.words?.length)) {
+    elements.ocrDetailControls.classList.add('is-hidden');
+    return;
+  }
+
+  elements.ocrDetailControls.classList.remove('is-hidden');
+
+  const items = ocrDetailView === 'words'
+    ? (detail.words || [])
+    : (detail.lines || []);
+
+  let filtered = ocrDetailFilterLow
+    ? items.filter((item) => item.confidence < LOW_CONFIDENCE_THRESHOLD)
+    : items;
+
+  if (filtered.length === 0) {
+    elements.ocrDetailList.textContent = '';
+    elements.ocrDetailEmpty.classList.remove('is-hidden');
+    return;
+  }
+
+  elements.ocrDetailEmpty.classList.add('is-hidden');
+
+  const capped = filtered.length > MAX_DETAIL_ITEMS
+    ? filtered.slice(0, MAX_DETAIL_ITEMS)
+    : filtered;
+
+  const fragment = document.createDocumentFragment();
+  for (const item of capped) {
+    const grade = getConfidenceItemGrade(item.confidence);
+    const itemEl = document.createElement('div');
+    itemEl.className = `ocr-detail-item ocr-detail-item--${grade}`;
+
+    const confEl = document.createElement('span');
+    confEl.className = `ocr-detail-confidence ocr-detail-confidence--${grade}`;
+    confEl.textContent = `${item.confidence}%`;
+    confEl.setAttribute('aria-label', `신뢰도 ${item.confidence}%`);
+
+    const textEl = document.createElement('span');
+    textEl.className = 'ocr-detail-text';
+    textEl.textContent = item.text;
+
+    itemEl.appendChild(confEl);
+    itemEl.appendChild(textEl);
+    if (item.confidence < LOW_CONFIDENCE_THRESHOLD && result?.metadata) {
+      const retry = document.createElement('button');
+      retry.className = 'ocr-detail-retry-btn';
+      retry.type = 'button';
+      retry.textContent = '이 영역 재인식';
+      retry.addEventListener('click', () => handleOcrBboxRerun(item.bbox));
+      itemEl.appendChild(retry);
+    }
+    fragment.appendChild(itemEl);
+  }
+
+  elements.ocrDetailList.textContent = '';
+  elements.ocrDetailList.appendChild(fragment);
+}
+
 function renderOcrSourceNotice(source) {
   const isImage = OCR_SESSION.normalizeOcrSource(source) === 'image';
   elements.ocrSourceNotice.textContent = isImage
@@ -409,6 +1242,7 @@ function renderOcrResult() {
   const status = state.ocr.latestOcrStatus;
   elements.ocrResultPanel.classList.toggle('is-disabled', !state.ocr.supported);
   renderOcrRerun();
+  renderOcrRecommendation();
 
   if (!state.ocr.supported) {
     elements.ocrResultStatus.textContent = '사용 불가';
@@ -446,6 +1280,16 @@ function renderOcrResult() {
     state.ocrEditedText = '';
     state.ocrDisplayedResult = null;
     state.ocrIsDirty = false;
+    ocrDetailShowAverage = false;
+    ocrDetailFilterLow = false;
+    ocrDetailView = 'lines';
+    if (elements.ocrDetailShowAverage) elements.ocrDetailShowAverage.checked = false;
+    if (elements.ocrDetailFilterLow) elements.ocrDetailFilterLow.checked = false;
+    if (elements.ocrDetailViewLines) elements.ocrDetailViewLines.setAttribute('aria-pressed', 'true');
+    if (elements.ocrDetailViewWords) elements.ocrDetailViewWords.setAttribute('aria-pressed', 'false');
+    elements.ocrConfidenceGrade?.removeAttribute('data-grade');
+    elements.ocrConfidenceGrade.textContent = '';
+    elements.ocrDetailControls?.classList.add('is-hidden');
     renderOcrRerun();
     return;
   }
@@ -505,9 +1349,16 @@ function renderOcrResult() {
     elements.ocrCropSize.textContent = `${cropWidth}×${cropHeight}px`;
   }
 
+  renderOcrConfidenceGrade(confidence);
+  renderOcrDetailPanel();
+  checkOcrContextStale().catch(() => {});
+
   elements.ocrEditArea?.classList.remove('is-hidden');
   elements.ocrEmptyState?.classList.add('is-hidden');
+  elements.ocrCleanupRulesSection?.classList.remove('is-hidden');
+  elements.ocrFindReplaceRow?.classList.add('is-hidden');
   renderOcrRerun();
+  renderOcrRecommendation();
   renderOcrHistory();
 }
 
@@ -861,6 +1712,290 @@ async function removeDomain(hostname) {
   });
 }
 
+const TRANSFER = globalThis.RIGHT_CLICK_ON_WEB_SETTINGS_TRANSFER;
+
+let transferPendingPlan = null;
+let transferBlobUrl = null;
+
+function showTransferStatus(message, kind = 'info') {
+  const el = document.getElementById('transferStatus');
+  if (!el) return;
+  el.textContent = message;
+  el.className = 'site-row-status';
+  el.classList.add(`row-${kind}`);
+  if (kind === 'success') {
+    setTimeout(() => { el.textContent = ''; }, 3000);
+  }
+}
+
+function renderTransferPreview(plan) {
+  const preview = document.getElementById('transferPreview');
+  const statsEl = document.getElementById('transferPreviewStats');
+  const warningEl = document.getElementById('transferPreviewWarning');
+  if (!preview || !statsEl) return;
+  preview.classList.remove('is-hidden');
+  statsEl.replaceChildren();
+  const summary = plan.summary;
+  if (summary.added.length > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'transfer-preview-stat added';
+    badge.textContent = `추가 ${summary.added.length}개`;
+    statsEl.append(badge);
+  }
+  if (summary.changed.length > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'transfer-preview-stat changed';
+    badge.textContent = `변경 ${summary.changed.length}개`;
+    statsEl.append(badge);
+  }
+  if (plan.mode === 'replace') {
+    const badge = document.createElement('span');
+    badge.className = 'transfer-preview-stat ignored';
+    badge.textContent = `삭제 ${summary.removed.length}개`;
+    statsEl.append(badge);
+  }
+  if (summary.ignored && summary.ignored.length > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'transfer-preview-stat ignored';
+    badge.textContent = `무시 ${summary.ignored.length}개`;
+    statsEl.append(badge);
+  }
+  if (plan.mode === 'replace') {
+    warningEl.classList.remove('is-hidden');
+    warningEl.textContent = `전체 교체를 선택하셨습니다. 기존 모든 사이트 설정이 삭제됩니다.`;
+  } else {
+    warningEl.classList.add('is-hidden');
+  }
+}
+
+function hideTransferPreview() {
+  const preview = document.getElementById('transferPreview');
+  if (preview) preview.classList.add('is-hidden');
+  transferPendingPlan = null;
+}
+
+async function handleTransferExport() {
+  try {
+    const fresh = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
+    const backup = TRANSFER.exportSettings({
+      enabled: fresh.enabled,
+      theme: fresh.theme,
+      domainSettings: fresh.domainSettings
+    });
+    const json = JSON.stringify(backup, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    if (transferBlobUrl) {
+      URL.revokeObjectURL(transferBlobUrl);
+    }
+    const downloadUrl = URL.createObjectURL(blob);
+    transferBlobUrl = downloadUrl;
+    const anchor = document.createElement('a');
+    anchor.href = downloadUrl;
+    const date = new Date().toISOString().slice(0, 10);
+    anchor.download = `right-click-on-web-backup-${date}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(downloadUrl);
+    if (transferBlobUrl === downloadUrl) transferBlobUrl = null;
+    showTransferStatus('설정을 내보냈습니다.', 'success');
+  } catch (err) {
+    showTransferStatus(`내보내기 실패: ${err.message}`, 'error');
+  }
+}
+
+async function handleTransferImport() {
+  const input = document.getElementById('transferFileInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+async function handleTransferFileSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const text = e.target && e.target.result;
+    if (typeof text !== 'string') {
+      showTransferStatus('파일을 읽을 수 없습니다.', 'error');
+      return;
+    }
+    const validated = TRANSFER.validateSettingsBackup(text);
+    if (!validated.ok) {
+      showTransferStatus(`유효하지 않은 백업 파일: ${validated.code}`, 'error');
+      return;
+    }
+    try {
+      const fresh = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
+      const plan = TRANSFER.planSettingsImport(validated.value, {
+        enabled: fresh.enabled,
+        theme: fresh.theme,
+        domainSettings: fresh.domainSettings
+      });
+      if (!plan.ok) {
+        showTransferStatus(`가져오기 계획 오류: ${plan.code}`, 'error');
+        return;
+      }
+      plan._backup = validated.value;
+      transferPendingPlan = plan;
+      renderTransferPreview(plan);
+    } catch (err) {
+      showTransferStatus(`가져오기 실패: ${err.message}`, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function handleTransferConfirm() {
+  if (!transferPendingPlan || !transferPendingPlan._backup) return;
+  const replaceRadio = document.getElementById('transferModeReplace');
+  const isReplace = replaceRadio && replaceRadio.checked;
+  if (isReplace) {
+    const dialog = document.getElementById('replaceImportConfirmDialog');
+    if (dialog) dialog.classList.remove('is-hidden');
+    return;
+  }
+  await executeReplaceImport(false);
+}
+
+async function executeReplaceImport(isReplace) {
+  if (!transferPendingPlan || !transferPendingPlan._backup) return;
+  const dialog = document.getElementById('replaceImportConfirmDialog');
+  if (dialog) dialog.classList.add('is-hidden');
+  try {
+    const fresh = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
+    const plan = TRANSFER.planSettingsImport(transferPendingPlan._backup, {
+      enabled: fresh.enabled,
+      theme: fresh.theme,
+      domainSettings: fresh.domainSettings
+    }, { replace: isReplace });
+    if (!plan.ok) {
+      showTransferStatus(`가져오기 실행 오류: ${plan.code}`, 'error');
+      return;
+    }
+    if (plan.settings.domainSettings) {
+      await writeDomainSettings(() => plan.settings.domainSettings);
+    }
+    if (Object.prototype.hasOwnProperty.call(plan.settings, 'enabled')) {
+      await writeGlobalEnabled(plan.settings.enabled);
+    }
+    if (Object.prototype.hasOwnProperty.call(plan.settings, 'theme') && plan.settings.theme !== state.theme) {
+      await handleThemeSelect(plan.settings.theme);
+    }
+    hideTransferPreview();
+    showTransferStatus('설정을 가져왔습니다.', 'success');
+    await reloadSettings();
+  } catch (err) {
+    showTransferStatus(`가져오기 실패: ${err.message}`, 'error');
+  }
+}
+
+function handleTransferCancel() {
+  hideTransferPreview();
+  showTransferStatus('', 'info');
+  const dialog = document.getElementById('replaceImportConfirmDialog');
+  if (dialog) dialog.classList.add('is-hidden');
+}
+
+async function handleResetCurrentSite() {
+  let currentHost;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.url) {
+      currentHost = SHARED.getHostname(tab.url);
+    }
+  } catch (_) {
+    // activeTab permission does not grant access when options page was opened directly
+  }
+  if (!currentHost) {
+    showTransferStatus('현재 사이트는 팝업에서만 초기화할 수 있습니다.', 'warn');
+    return;
+  }
+  if (typeof window.confirm === 'function' && !window.confirm(`'${currentHost}' 사이트 설정을 초기화하시겠습니까?`)) {
+    return;
+  }
+  try {
+    await removeDomain(currentHost);
+    showTransferStatus(`'${currentHost}' 설정을 초기화했습니다.`, 'success');
+    await reloadSettings();
+  } catch (err) {
+    showTransferStatus(`초기화 실패: ${err.message}`, 'error');
+  }
+}
+
+async function handleResetAllSites() {
+  if (typeof window.confirm === 'function' && !window.confirm('모든 사이트 설정을 초기화하시겠습니까?')) {
+    return;
+  }
+  try {
+    await writeDomainSettings(() => ({}));
+    showTransferStatus('모든 사이트 설정을 초기화했습니다.', 'success');
+    await reloadSettings();
+  } catch (err) {
+    showTransferStatus(`초기화 실패: ${err.message}`, 'error');
+  }
+}
+
+async function handleResetUiPrefs() {
+  if (typeof window.confirm === 'function' && !window.confirm('UI 환경설정(테마)을 기본값(다크)으로 초기화하시겠습니까?')) {
+    return;
+  }
+  try {
+    await handleThemeSelect(SHARED.DEFAULT_THEME);
+    showTransferStatus('UI 환경설정을 초기화했습니다.', 'success');
+    await reloadSettings();
+  } catch (err) {
+    showTransferStatus(`초기화 실패: ${err.message}`, 'error');
+  }
+}
+
+function handleResetAllSettings() {
+  const dialog = document.getElementById('transferConfirmDialog');
+  if (dialog) dialog.classList.remove('is-hidden');
+}
+
+async function executeResetAllSettings() {
+  const dialog = document.getElementById('transferConfirmDialog');
+  if (dialog) dialog.classList.add('is-hidden');
+  try {
+    await writeDomainSettings(() => ({}));
+    await writeGlobalEnabled(SHARED.STORAGE_DEFAULTS.enabled);
+    await handleThemeSelect(SHARED.DEFAULT_THEME);
+    showTransferStatus('전체 설정을 초기화했습니다.', 'success');
+    await reloadSettings();
+  } catch (err) {
+    showTransferStatus(`초기화 실패: ${err.message}`, 'error');
+  }
+}
+
+function handleDialogCancel() {
+  const dialog = document.getElementById('transferConfirmDialog');
+  if (dialog) dialog.classList.add('is-hidden');
+}
+
+function setupTransferListeners() {
+  if (typeof TRANSFER === 'undefined') return;
+  document.getElementById('transferExportBtn')?.addEventListener('click', handleTransferExport);
+  const importBtn = document.getElementById('transferImportBtn');
+  const fileInput = document.getElementById('transferFileInput');
+  importBtn?.addEventListener('click', handleTransferImport);
+  fileInput?.addEventListener('change', handleTransferFileSelected);
+  document.getElementById('transferConfirmBtn')?.addEventListener('click', handleTransferConfirm);
+  document.getElementById('transferCancelBtn')?.addEventListener('click', handleTransferCancel);
+  document.getElementById('resetCurrentSiteBtn')?.addEventListener('click', handleResetCurrentSite);
+  document.getElementById('resetAllSitesBtn')?.addEventListener('click', handleResetAllSites);
+  document.getElementById('resetUiPrefsBtn')?.addEventListener('click', handleResetUiPrefs);
+  document.getElementById('resetAllSettingsBtn')?.addEventListener('click', handleResetAllSettings);
+  document.getElementById('dialogConfirmBtn')?.addEventListener('click', executeResetAllSettings);
+  document.getElementById('dialogCancelBtn')?.addEventListener('click', handleDialogCancel);
+  document.getElementById('replaceImportConfirmBtn')?.addEventListener('click', () => executeReplaceImport(true));
+  document.getElementById('replaceImportCancelBtn')?.addEventListener('click', () => {
+    const dialog = document.getElementById('replaceImportConfirmDialog');
+    if (dialog) dialog.classList.add('is-hidden');
+  });
+}
+
 let reloadSettingsPromise = null;
 function reloadSettings() {
   if (!reloadSettingsPromise) {
@@ -896,12 +2031,13 @@ elements.globalToggle.addEventListener('click', () => handleGlobalToggle().catch
 elements.optThemeDark?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_DARK).catch(console.error));
 elements.optThemeNeon?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_NEON).catch(console.error));
 elements.optThemeLight?.addEventListener('click', () => handleThemeSelect(SHARED.THEME_LIGHT).catch(console.error));
+elements.optThemeDark?.addEventListener('keydown', handleThemeKeydown);
+elements.optThemeNeon?.addEventListener('keydown', handleThemeKeydown);
+elements.optThemeLight?.addEventListener('keydown', handleThemeKeydown);
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' || areaName === 'sync') {
     if (changes.theme) {
-      state.theme = SHARED.resolveTheme(changes.theme.newValue);
-      applyTheme(state.theme);
-      syncThemeButtons();
+      reloadSettings().catch(console.error);
     }
     if (changes.enabled || changes.domainSettings) {
       reloadSettings().catch(console.error);
@@ -921,6 +2057,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 attachOcrEditListeners();
+loadCorrectionDictionary().then(() => {
+  renderCorrectionList();
+  renderCorrectionApplyButton();
+});
+renderCleanupRulesUI();
+setupTransferListeners();
 reload().catch((error) => {
   console.error('[Right-click on Web] failed to load options', error);
 });

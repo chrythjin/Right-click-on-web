@@ -1,13 +1,36 @@
-# Tool / runtime byproducts
+# Tool / IDE runtime byproducts
 .serena/
 .omo/
 .cortexkit/
 .codegraph/
 .opencode/
 .playwright-mcp/
+.debug-journal.md
+AGENTS.md
 
-# Local history & backup (per project AGENTS.md)
+# Local history & backup
 history/
+sync/
 
-# Generated store package (regenerate via documented Compress-Archive command)
-right-click-on-web.zip
+# Generated store packages / archives
+*.zip
+
+# Standalone preview
+popup-preview.html
+
+# Internal development docs, sessions, reviews & plans (preserves privacy-policy.html & .nojekyll)
+docs/sessions/
+docs/reviews/
+docs/plans/
+docs/INDEX.md
+docs/AGENTS.md
+docs/benchmarking-roadmap.md
+docs/bypass-runtime-investigation.md
+docs/chrome-web-store-requirements.md
+docs/deployment-manual.md
+docs/store-listing.md
+docs/store-submission-plan.md
+
+# Tests & scripts
+tests/
+scripts/

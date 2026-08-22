@@ -81,6 +81,17 @@ let rescanTimer = null;
 let idleRescans = new Set();
 let stats = createStats();
 
+const DIAGNOSTIC_ATTRIBUTE_COUNTER_KEYS = Object.freeze([
+  'oncontextmenu', 'onselectstart', 'oncopy', 'oncut', 'onpaste',
+  'ondragstart', 'ondragover', 'ondrop'
+]);
+const DIAGNOSTIC_EVENT_COUNTER_KEYS = Object.freeze([
+  'contextmenu', 'selectstart', 'copy', 'cut', 'paste', 'dragstart',
+  'dragover', 'drop', 'mousedown', 'mouseup', 'keydown'
+]);
+const DIAGNOSTIC_SOURCES = Object.freeze(['initial', 'session', 'domain', 'global']);
+const DIAGNOSTIC_HOSTNAME_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i;
+
 function createStats() {
   const result = {
     attributeRemovals: Object.fromEntries(
@@ -110,6 +121,55 @@ function resetStats() {
   window.__rightClickOnWebStats = stats;
 }
 
+function readDiagnosticValue(source, key) {
+  try {
+    return source && typeof source === 'object' ? source[key] : undefined;
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function copyDiagnosticCounters(source, keys) {
+  const result = {};
+  for (const key of keys) {
+    const value = readDiagnosticValue(source, key);
+    result[key] = Number.isInteger(value) && value >= 0 ? value : 0;
+  }
+  return result;
+}
+
+function copyDiagnosticFeatures(source) {
+  const result = {};
+  const features = readDiagnosticValue(source, 'features');
+  for (const key of SHARED.FEATURE_KEYS) {
+    result[key] = readDiagnosticValue(features, key) === true;
+  }
+  return result;
+}
+
+function sanitizeDiagnosticStats(source) {
+  const resolveSource = readDiagnosticValue(source, 'resolveSource');
+  const mode = readDiagnosticValue(source, 'mode');
+  const preset = readDiagnosticValue(source, 'preset');
+  const matchedDomain = readDiagnosticValue(source, 'matchedDomain');
+  return {
+    attributeRemovals: copyDiagnosticCounters(readDiagnosticValue(source, 'attributeRemovals'), DIAGNOSTIC_ATTRIBUTE_COUNTER_KEYS),
+    eventInterceptions: copyDiagnosticCounters(readDiagnosticValue(source, 'eventInterceptions'), DIAGNOSTIC_EVENT_COUNTER_KEYS),
+    overlaysNeutralized: copyDiagnosticCounters(source, ['overlaysNeutralized']).overlaysNeutralized,
+    shadowRootsScanned: copyDiagnosticCounters(source, ['shadowRootsScanned']).shadowRootsScanned,
+    periodicRescans: copyDiagnosticCounters(source, ['periodicRescans']).periodicRescans,
+    resolveSource: DIAGNOSTIC_SOURCES.includes(resolveSource) ? resolveSource : 'unknown',
+    matchedDomain: typeof matchedDomain === 'string'
+      && DIAGNOSTIC_HOSTNAME_PATTERN.test(matchedDomain)
+      && !matchedDomain.includes('..')
+      ? matchedDomain
+      : null,
+    mode: mode === SHARED.MODE_LITE || mode === SHARED.MODE_ULTIMATE ? mode : 'unknown',
+    preset: SHARED.VALID_PRESETS.includes(preset) ? preset : 'unknown',
+    features: copyDiagnosticFeatures(source)
+  };
+}
+
 function readDiagnosticStatsBridge() {
   const current = (typeof stats === 'object' && stats !== null && !Array.isArray(stats))
     ? stats
@@ -132,7 +192,7 @@ function readDiagnosticStatsBridge() {
         reason: '진단 브리지 형식이 올바르지 않습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'
       };
     }
-    return { ok: true, stats: snapshot };
+    return { ok: true, stats: sanitizeDiagnosticStats(snapshot) };
   } catch (_) {
     return {
       ok: false,
@@ -801,7 +861,8 @@ async function resolveEnabled() {
   // 1) Session layer — temporary per-hostname override. Wins over
   //    everything because the user explicitly asked for "this session
   //    only" and that intent is narrower than the persistent domain
-  //    setting. Session always implies ultimate mode.
+  //    setting. `true` = session ON override; `false` = session OFF
+  //    override (temporary pause). Absent key falls through to domain.
   if (hostname && SHARED.isSessionStorageAvailable()) {
     const key = SHARED.sessionKeyFor(hostname);
     try {
@@ -812,6 +873,14 @@ async function resolveEnabled() {
           hostname,
           matchedKey: null,
           ...SHARED.parseDomainSetting({ enabled: true, preset: SHARED.DEFAULT_PRESET })
+        };
+      }
+      if (sessionData[key] === false) {
+        return {
+          source: 'session',
+          hostname,
+          matchedKey: null,
+          ...SHARED.parseDomainSetting({ enabled: false, preset: SHARED.DEFAULT_PRESET })
         };
       }
     } catch (_) {
@@ -966,6 +1035,17 @@ if (chrome.runtime && chrome.runtime.onMessage && typeof chrome.runtime.onMessag
     const response = handleDiagnosticStatsMessage(message);
     if (response) {
       sendResponse(response);
+      return;
+    }
+    if (message && message.type === 'rcow:getViewport') {
+      sendResponse({
+        ok: true,
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          dpr: window.devicePixelRatio
+        }
+      });
     }
   });
 }

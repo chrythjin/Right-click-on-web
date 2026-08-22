@@ -323,12 +323,12 @@
 
   function startCrop() {
     if (overlayElement) {
-      return;
+      return { ok: true };
     }
 
     const keyboardUtils = requireKU();
     if (!keyboardUtils) {
-      return;
+      return { ok: false, error: KEYBOARD_UTILS_ERROR };
     }
 
     previousActiveElement = document.activeElement;
@@ -337,8 +337,9 @@
     cropState = keyboardUtils.initCropKeyboard(vp.width, vp.height, Math.min(200, vp.width * 0.3), Math.min(150, vp.height * 0.3));
 
     if (!cropState) {
-      showToast('화면이 너무 작아 영역을 선택할 수 없습니다.', 'error', 4000);
-      return;
+      const error = '화면이 너무 작아 영역을 선택할 수 없습니다.';
+      showToast(error, 'error', 4000);
+      return { ok: false, error };
     }
 
     overlayElement = document.createElement('div');
@@ -371,6 +372,7 @@
     updateSrInstruction(cropState);
     overlayElement.setAttribute('tabindex', '-1');
     overlayElement.focus();
+    return { ok: true };
   }
 
   function onMouseDown(event) {
@@ -512,8 +514,7 @@
       if (typeof message.notice === 'string' && message.notice) {
         showToast(message.notice, 'info', 4500);
       }
-      startCrop();
-      sendResponse({ ok: true });
+      sendResponse(startCrop());
     }
     if (message && message.type === 'rcow:getViewport') {
       const devicePixelRatio = window.devicePixelRatio || 1;

@@ -39,6 +39,25 @@
         이 사이트 예외로 추가 (전체 OFF)
       </button>
 
+      <section class="recovery-card" aria-label="현재 사이트 빠른 복구">
+        <p class="label">현재 사이트 빠른 복구</p>
+        <div class="recovery-actions">
+          <button id="quickLiteButton" class="recovery-button" type="button">
+            <span class="recovery-button-label">Lite 모드로 전환</span>
+            <span class="recovery-button-desc">CSSdrags 허용 안 함 · JS 우클릭만 복구</span>
+          </button>
+          <button id="quickSessionOffButton" class="recovery-button recovery-button-pause" type="button">
+            <span class="recovery-button-label">이번 세션만 일시정지</span>
+            <span class="recovery-button-desc">확장 온 · 이 사이트만 잠시 끄기</span>
+          </button>
+          <button id="quickPermanentOffButton" class="recovery-button recovery-button-off" type="button">
+            <span class="recovery-button-label">이 사이트 영구 끄기</span>
+            <span class="recovery-button-desc">도메인 영구 OFF · 복원 가능</span>
+          </button>
+        </div>
+        <p id="quickRecoveryHint" class="recovery-hint"></p>
+      </section>
+
       <section class="mode-card" aria-live="polite" aria-atomic="true">
         <p class="label">완화 모드 (현재 사이트)</p>
         <div class="mode-toggle" role="radiogroup" aria-label="완화 모드">
@@ -69,6 +88,11 @@
         <p id="effectiveSource" class="effective-source" role="status"></p>
       </section>
 
+      <section id="featureImpactCard" class="feature-impact-card is-hidden" aria-label="기능 영향 설명">
+        <p class="label">영향 설명</p>
+        <div id="featureImpactContent" class="feature-impact-grid"></div>
+      </section>
+
       <section class="theme-card">
         <p class="label">테마 색</p>
         <div class="theme-toggle" role="radiogroup" aria-label="테마">
@@ -95,11 +119,15 @@
 
        <section class="diagnostic-card" aria-label="로컬 진단 보고서">
          <p class="label">로컬 진단 보고서</p>
-         <p class="diagnostic-hint">현재 사이트의 설정과 차단 완화 카운터, 그리고 호스트명만 복사합니다. 페이지 내용, URL 경로, OCR 결과는 포함하지 않습니다.</p>
-         <button id="copyDiagnosticButton" class="diagnostic-button" type="button">
-           진단 보고서 복사
-         </button>
-         <p id="diagnosticStatus" class="diagnostic-status is-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p class="diagnostic-hint">현재 사이트의 설정과 차단 완화 카운터, 그리고 호스트명만 복사합니다. 페이지 내용, URL 경로, OCR 결과는 포함하지 않습니다.</p>
+          <button id="showDiagnosticButton" class="diagnostic-button" type="button">
+            현재 사이트 진단 보기
+          </button>
+          <button id="copyDiagnosticButton" class="diagnostic-button" type="button">
+            진단 보고서 복사
+          </button>
+          <p id="diagnosticStatus" class="diagnostic-status is-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+          <pre id="diagnosticOutput" class="diagnostic-output is-hidden" aria-label="현재 사이트 개인정보 제외 진단"></pre>
        </section>
 
        <button id="ocrButton" class="ocr-button" type="button">

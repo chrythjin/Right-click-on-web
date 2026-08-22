@@ -35,6 +35,8 @@ let creatingOffscreenPromise = null;
 let ocrSessionWritePromise = Promise.resolve();
 let ocrHistoryWritePromise = Promise.resolve();
 let latestOcrRequestId = 0;
+let activeOcrRequestId = 0;
+const cancelledOcrRequestIds = new Set();
 const toolbarUpdateVersions = new Map();
 const toolbarUpdatePromises = new Map();
 const imageContextCache = new Map();
@@ -132,13 +134,13 @@ async function ensureOffscreenDocument() {
 }
 
 async function triggerCropOnActiveTab() {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) {
-      await chrome.tabs.sendMessage(tab.id, { type: 'rcow:startCrop' });
-    }
-  } catch (error) {
-    console.warn('Failed to send startCrop message to active tab:', error);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!Number.isInteger(tab?.id)) {
+    throw new Error('OCR을 시작할 활성 탭을 찾을 수 없습니다.');
+  }
+  const response = await chrome.tabs.sendMessage(tab.id, { type: 'rcow:startCrop' });
+  if (!response?.ok) {
+    throw new Error(response?.error || 'OCR 영역 선택을 시작하지 못했습니다.');
   }
 }
 
@@ -356,6 +358,7 @@ async function describeOcrCaptureFailure(error, tab) {
 
 async function captureAndOcr(tab, request) {
   const requestId = await allocateOcrRequestId();
+  activeOcrRequestId = requestId;
   const source = OCR_SESSION.normalizeOcrSource(request?.source);
   try {
     let captureTab = tab;
@@ -367,9 +370,10 @@ async function captureAndOcr(tab, request) {
       const activeHostname = SHARED.getHostname(activeTab?.url);
       const currentViewport = await chrome.tabs.sendMessage(activeTab?.id, { type: 'rcow:getViewport' });
       if (activeTab?.id !== tab?.id || activeHostname !== SHARED.getHostname(tab?.url) ||
-          !currentViewport || currentViewport.width !== request.viewport?.width ||
-          currentViewport.height !== request.viewport?.height ||
-          currentViewport.devicePixelRatio !== request.viewport?.devicePixelRatio) {
+          currentViewport?.ok !== true || !currentViewport.viewport ||
+          currentViewport.viewport.width !== request.viewport?.width ||
+          currentViewport.viewport.height !== request.viewport?.height ||
+          currentViewport.viewport.dpr !== request.viewport?.devicePixelRatio) {
         throw new Error('원래 탭과 화면 크기에서 다시 시도하세요.');
       }
       captureTab = activeTab;
@@ -398,6 +402,9 @@ async function captureAndOcr(tab, request) {
     if (!dataUrl) {
       throw new Error('화면 캡처 데이터를 가져올 수 없습니다.');
     }
+    if (cancelledOcrRequestIds.has(requestId)) {
+      throw new Error('OCR 요청이 취소되었습니다.');
+    }
     await ensureOffscreenDocument();
     const ocrResponse = await chrome.runtime.sendMessage({
       type: 'rcow:runOcr',
@@ -408,6 +415,9 @@ async function captureAndOcr(tab, request) {
       useRequestedPreprocessing: request?.useRequestedPreprocessing === true,
       requestId
     });
+    if (cancelledOcrRequestIds.has(requestId) || ocrResponse?.cancelled === true) {
+      throw new Error('OCR 요청이 취소되었습니다.');
+    }
     if (!ocrResponse?.ok || ocrResponse.requestId !== requestId) {
       throw new Error(ocrResponse?.error || 'OCR 응답 순서를 확인할 수 없습니다.');
     }
@@ -419,8 +429,15 @@ async function captureAndOcr(tab, request) {
     });
     return ocrResponse;
   } catch (error) {
-    void updateOcrSession({ type: 'error', error: error.message || String(error), requestId });
+    void updateOcrSession({
+      type: cancelledOcrRequestIds.has(requestId) ? 'cancelled' : 'error',
+      error: error.message || String(error),
+      requestId
+    });
     throw error;
+  } finally {
+    cancelledOcrRequestIds.delete(requestId);
+    if (activeOcrRequestId === requestId) activeOcrRequestId = 0;
   }
 }
 
@@ -434,7 +451,12 @@ async function rerunOcrOnActiveTab() {
   if (!Number.isInteger(tab?.id)) {
     throw new Error('현재 탭을 확인할 수 없습니다.');
   }
-  const viewport = await chrome.tabs.sendMessage(tab.id, { type: 'rcow:getViewport' });
+  const viewportResponse = await chrome.tabs.sendMessage(tab.id, { type: 'rcow:getViewport' });
+  const viewport = viewportResponse?.ok === true ? {
+    width: viewportResponse.viewport?.width,
+    height: viewportResponse.viewport?.height,
+    devicePixelRatio: viewportResponse.viewport?.dpr
+  } : null;
   const validation = OCR_SESSION.validateLastRegionRerun(
     metadata, { id: tab.id, hostname: SHARED.getHostname(tab.url) }, viewport
   );
@@ -451,6 +473,27 @@ async function rerunOcrOnActiveTab() {
     throw new Error('저장된 OCR 영역 정보가 올바르지 않습니다.');
   }
   return captureAndOcr(currentTab, { ...rerunRequest, verifyActiveTab: true });
+}
+
+async function rerunOcrBboxOnActiveTab(bbox, preprocessingProfile) {
+  if (!hasSessionStorage()) {
+    throw new Error('이 브라우저에서는 OCR 재인식을 지원하지 않습니다.');
+  }
+  const stored = await SHARED.storageGet(chrome.storage.session, OCR_SESSION.OCR_SESSION_KEYS);
+  const metadata = stored?.[OCR_SESSION.LATEST_OCR_RESULT_KEY]?.metadata;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!Number.isInteger(tab?.id)) throw new Error('현재 탭을 확인할 수 없습니다.');
+  const viewportResponse = await chrome.tabs.sendMessage(tab.id, { type: 'rcow:getViewport' });
+  const viewport = viewportResponse?.ok === true ? {
+    width: viewportResponse.viewport?.width,
+    height: viewportResponse.viewport?.height,
+    devicePixelRatio: viewportResponse.viewport?.dpr
+  } : null;
+  const validation = OCR_SESSION.validateOcrRerun(metadata, { id: tab.id, hostname: SHARED.getHostname(tab.url) }, viewport);
+  if (!validation.ok) throw new Error(validation.error);
+  const request = OCR_SESSION.createBboxRerunRequest(validation.metadata, bbox, preprocessingProfile);
+  if (!request) throw new Error('선택한 저신뢰도 영역 정보가 올바르지 않습니다.');
+  return captureAndOcr(tab, { ...request, verifyActiveTab: true });
 }
 
 void exposeSessionStorageToContentScripts();
@@ -630,7 +673,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
   if (info.menuItemId === CONTEXT_MENU_IDS.TRIGGER_OCR) {
-    await triggerCropOnActiveTab();
+    try {
+      await triggerCropOnActiveTab();
+    } catch (error) {
+      console.warn('Failed to send startCrop message to active tab:', error);
+    }
     return;
   }
   if (info.menuItemId === CONTEXT_MENU_IDS.IMAGE_OCR) {
@@ -639,9 +686,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
   if (info.menuItemId === CONTEXT_MENU_IDS.OPEN_PANEL) {
     if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
-      const current = await currentWindow();
-      if (typeof current?.id === 'number') {
-        chrome.sidePanel.open({ windowId: current.id }).catch(() => openOptionsFallback());
+      if (typeof tab?.windowId === 'number') {
+        chrome.sidePanel.open({ windowId: tab.windowId }).catch(openOptionsFallback);
       } else {
         openOptionsFallback();
       }
@@ -679,25 +725,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'rcow:openSidePanel') {
-    // Called from popup.js — the service worker's onMessage context satisfies
-    // Chrome's user-gesture requirement for chrome.sidePanel.open(), unlike
-    // the popup's async handler which severs the gesture chain after an await.
-    (async () => {
-      try {
-        const current = await currentWindow();
-        if (typeof current?.id === 'number' &&
-            chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
-          await chrome.sidePanel.open({ windowId: current.id });
-          sendResponse({ ok: true });
-        } else {
-          openOptionsFallback();
-          sendResponse({ ok: false, reason: 'no-window' });
-        }
-      } catch (_) {
+    const windowId = typeof sender?.tab?.windowId === 'number'
+      ? sender.tab.windowId
+      : chrome.windows.WINDOW_ID_CURRENT;
+    if (!chrome.sidePanel || typeof chrome.sidePanel.open !== 'function') {
+      openOptionsFallback();
+      sendResponse({ ok: false, reason: 'unsupported' });
+      return;
+    }
+    chrome.sidePanel.open({ windowId }).then(
+      () => sendResponse({ ok: true }),
+      () => {
         openOptionsFallback();
         sendResponse({ ok: false, reason: 'error' });
       }
-    })();
+    );
     return true;
   }
   if (message.type === 'rcow:imageContextObserved') {
@@ -727,6 +769,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  if (message.type === 'rcow:ocrProgress') {
+    if (Number.isInteger(message.requestId) && message.requestId === activeOcrRequestId &&
+        !cancelledOcrRequestIds.has(message.requestId)) {
+      void updateOcrSession({
+        type: 'loading', requestId: message.requestId, progress: message.progress, phase: message.phase
+      });
+    }
+    sendResponse({ ok: true, requestId: message.requestId });
+    return;
+  }
+  if (message.type === 'rcow:cancelOcr' && message.target !== 'offscreen') {
+    const requestId = activeOcrRequestId;
+    if (!requestId) {
+      sendResponse({ ok: false, error: '취소할 OCR 요청이 없습니다.' });
+      return;
+    }
+    cancelledOcrRequestIds.add(requestId);
+    void updateOcrSession({ type: 'cancelled', requestId });
+    chrome.runtime.sendMessage({ type: 'rcow:cancelOcr', target: 'offscreen', requestId }).then(
+      () => sendResponse({ ok: true, requestId }),
+      () => sendResponse({ ok: true, requestId })
+    );
+    return true;
+  }
   if (message.type === 'rcow:rerunOcrOnActiveTab') {
     (async () => {
       try {
@@ -734,6 +800,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } catch (error) {
         const response = { ok: false, error: error.message || String(error) };
         sendResponse(response);
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'rcow:rerunOcrBboxOnActiveTab') {
+    (async () => {
+      try {
+        sendResponse(await rerunOcrBboxOnActiveTab(message.bbox, message.preprocessingProfile));
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message || String(error) });
       }
     })();
     return true;
@@ -759,18 +835,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 function openOptionsFallback() {
   if (chrome.runtime && typeof chrome.runtime.openOptionsPage === 'function') {
-    chrome.runtime.openOptionsPage();
-  }
-}
-
-function currentWindow() {
-  return new Promise((resolve) => {
-    try {
-      chrome.windows.getCurrent((current) => resolve(current));
-    } catch (_) {
-      resolve(null);
+    const opened = chrome.runtime.openOptionsPage();
+    if (opened && typeof opened.catch === 'function') {
+      opened.catch(() => {});
     }
-  });
+  }
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

@@ -61,9 +61,76 @@
           <div id="ocrConfidenceRow" class="ocr-confidence-row">
             <span id="ocrConfidenceLabel" class="ocr-confidence-label">
               <span id="ocrConfidenceValue" class="ocr-confidence-value">신뢰도 --%</span>
+              <span id="ocrConfidenceGrade" class="ocr-confidence-grade" aria-label="신뢰도 등급"></span>
               <span id="ocrConfidenceWarning" class="ocr-confidence-warning is-hidden">낮은 신뢰도</span>
             </span>
             <span id="ocrCropSize" class="ocr-crop-size"></span>
+          </div>
+
+          <div id="ocrDetailControls" class="ocr-detail-controls is-hidden">
+            <div class="ocr-detail-filter-row">
+              <label class="ocr-detail-toggle-label">
+                <input id="ocrDetailShowAverage" type="checkbox" class="ocr-detail-checkbox">
+                <span>평균 상세 정보</span>
+              </label>
+              <label class="ocr-detail-toggle-label">
+                <input id="ocrDetailFilterLow" type="checkbox" class="ocr-detail-checkbox">
+                <span>낮은 신뢰도만</span>
+              </label>
+              <div class="ocr-detail-view-toggle" role="group" aria-label="상세 보기">
+                <button id="ocrDetailViewLines" class="ocr-detail-view-btn" type="button" aria-pressed="true">라인</button>
+                <button id="ocrDetailViewWords" class="ocr-detail-view-btn" type="button" aria-pressed="false">단어</button>
+              </div>
+            </div>
+            <div id="ocrDetailStale" class="ocr-detail-stale is-hidden" role="alert" aria-live="assertive"></div>
+            <div id="ocrDetailList" class="ocr-detail-list" aria-label="OCR 상세 정보" aria-live="polite"></div>
+            <p id="ocrDetailEmpty" class="ocr-detail-empty is-hidden">표시할 상세 항목이 없습니다.</p>
+          </div>
+
+          <div id="ocrCleanupRulesSection" class="ocr-cleanup-rules-section is-hidden">
+            <div class="ocr-section-heading">
+              <p class="ocr-section-label">정리 규칙</p>
+              <button id="ocrCleanupToggleAllBtn" class="ocr-small-btn" type="button">전체 선택</button>
+            </div>
+            <div id="ocrCleanupRulesList" class="ocr-cleanup-rules-list" role="group" aria-label="정리 규칙">
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="removeZeroWidthChars">
+                <span>공백 문자 제거</span>
+              </label>
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="normalizeSpaces">
+                <span>공백 정규화</span>
+              </label>
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="normalizePunctuationSpacing">
+                <span>문장부호 간격</span>
+              </label>
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="joinHyphenatedLines">
+                <span>줄 끝 Hyphen 연결</span>
+              </label>
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="joinWrappedParagraphs">
+                <span>자동 줄 바꿈 연결</span>
+              </label>
+              <label class="ocr-cleanup-rule-label">
+                <input type="checkbox" class="ocr-cleanup-rule-checkbox" data-rule="collapseBlankLines">
+                <span>연속 빈 줄 축소</span>
+              </label>
+            </div>
+            <div class="ocr-cleanup-rules-actions">
+              <button id="ocrCleanupPreviewBtn" class="ocr-action-btn" type="button" disabled>
+                <span class="ocr-action-icon">👁</span> 미리보기
+              </button>
+              <button id="ocrCleanupApplyBtn" class="ocr-action-btn" type="button" disabled>
+                <span class="ocr-action-icon">✓</span> 규칙 적용
+              </button>
+            </div>
+            <div id="ocrCleanupPreviewArea" class="ocr-cleanup-preview-area is-hidden">
+              <p class="ocr-cleanup-preview-label">미리보기 결과</p>
+              <pre id="ocrCleanupPreviewText" class="ocr-cleanup-preview-text"></pre>
+            </div>
+            <p id="ocrCleanupStatus" class="ocr-cleanup-status" role="status" aria-live="polite"></p>
           </div>
 
           <div id="ocrOriginalSection" class="ocr-original-section">
@@ -92,14 +159,42 @@
             <button id="ocrRestoreBtn" class="ocr-action-btn" type="button">
               <span class="ocr-action-icon">↩</span> 원본 복원
             </button>
+            <button id="ocrUndoBtn" class="ocr-action-btn" type="button" disabled title="실행 취소 (Ctrl+Z)">
+              <span class="ocr-action-icon">↶</span> 실행 취소
+            </button>
+            <button id="ocrRedoBtn" class="ocr-action-btn" type="button" disabled title="다시 실행 (Ctrl+Y)">
+              <span class="ocr-action-icon">↷</span> 다시 실행
+            </button>
+            <button id="ocrApplyCorrectionBtn" class="ocr-action-btn" type="button" disabled title="로컬 교정 사전을 편집 텍스트에 적용합니다.">
+              <span class="ocr-action-icon">🔤</span> 교정 사전 적용
+            </button>
           </div>
 
-          <div id="ocrRerunSection" class="ocr-rerun-section">
+          <div id="ocrFindReplaceRow" class="ocr-find-replace-row is-hidden">
+            <div class="ocr-find-replace-inputs">
+              <input id="ocrFindInput" class="ocr-find-input" type="text" autocomplete="off" placeholder="찾을 텍스트" aria-label="찾을 텍스트">
+              <input id="ocrReplaceInput" class="ocr-replace-input" type="text" autocomplete="off" placeholder="바꿀 텍스트" aria-label="바꿀 텍스트">
+            </div>
+            <div class="ocr-find-replace-actions">
+              <button id="ocrFindPrevBtn" class="ocr-small-btn" type="button" disabled title="이전 찾기">◀</button>
+              <span id="ocrFindCounter" class="ocr-find-counter" aria-live="polite"></span>
+              <button id="ocrFindNextBtn" class="ocr-small-btn" type="button" disabled title="다음 찾기">▶</button>
+              <button id="ocrReplaceCurrentBtn" class="ocr-small-btn" type="button" disabled>현재</button>
+              <button id="ocrReplaceAllBtn" class="ocr-small-btn" type="button" disabled>전체</button>
+            </div>
+          </div>
+
+           <div id="ocrRerunSection" class="ocr-rerun-section">
             <button id="ocrRerunBtn" class="ocr-action-btn ocr-rerun-btn" type="button" disabled title="마지막 수동 영역을 새로 캡처하여 다시 인식합니다.">
               <span class="ocr-action-icon">🔄</span> 마지막 영역 다시 인식
             </button>
             <p id="ocrRerunNote" class="ocr-rerun-note">마지막 수동 영역 OCR이 있으면 같은 탭과 화면 크기에서 새 캡처로 다시 인식합니다.</p>
-          </div>
+           </div>
+
+           <div id="ocrRecommendationSection" class="ocr-rerun-section is-hidden">
+             <button id="ocrRecommendationBtn" class="ocr-action-btn" type="button" disabled>추천 프로필로 다시 인식</button>
+             <p id="ocrRecommendationNote" class="ocr-rerun-note"></p>
+           </div>
 
           <div class="ocr-history-save-row">
             <button id="ocrHistorySaveBtn" class="ocr-action-btn" type="button">현재 편집본 기록</button>
@@ -113,6 +208,32 @@
           <pre id="ocrResultText" class="ocr-result-text">아직 성공한 OCR 결과가 없습니다.</pre>
           <p class="options-help">성공한 텍스트와 안전한 처리 메타데이터만 브라우저 종료 전까지 임시 보관합니다.</p>
         </div>
+      </section>
+
+      <section id="ocrCorrectionSection" class="options-section ocr-correction-section" aria-labelledby="ocrCorrectionTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">로컬 교정 사전</p>
+            <h2 id="ocrCorrectionTitle">사용자 교정 사전</h2>
+          </div>
+          <button id="ocrCorrectionToggle" class="toggle-button toggle-small" type="button" aria-pressed="false">OFF</button>
+        </div>
+        <p class="options-help">켜면 OCR 편집 중 사용자 교정 사전을 적용할 수 있습니다. 사전은 이 기기에만 저장되며 동기화나 내보내기/가져오기에 포함되지 않습니다. 최대 200개 항목, 64 KiB 제한.</p>
+        <div id="ocrCorrectionControls" class="ocr-correction-controls is-hidden">
+          <div class="ocr-correction-add-row">
+            <input id="ocrCorrectionFrom" class="ocr-correction-input" type="text" autocomplete="off" placeholder="원문 (from)" aria-label="원문">
+            <span class="ocr-correction-arrow" aria-hidden="true">→</span>
+            <input id="ocrCorrectionTo" class="ocr-correction-input" type="text" autocomplete="off" placeholder="교정 (to)" aria-label="교정">
+            <button id="ocrCorrectionAddBtn" class="ocr-small-btn" type="button" disabled>추가</button>
+          </div>
+          <p id="ocrCorrectionAddStatus" class="ocr-correction-status" role="status" aria-live="polite"></p>
+          <div class="ocr-correction-entries-header">
+            <span id="ocrCorrectionCount" class="ocr-correction-count"></span>
+            <button id="ocrCorrectionClearAllBtn" class="delete-button" type="button">전체 삭제</button>
+          </div>
+          <div id="ocrCorrectionList" class="ocr-correction-list" aria-label="교정 사전 항목"></div>
+        </div>
+        <p id="ocrCorrectionStatus" class="site-row-status" role="status" aria-live="polite"></p>
       </section>
 
       <section class="options-section ocr-history-section" aria-labelledby="ocrHistoryTitle">
@@ -154,7 +275,91 @@
         <p id="syncUsage" class="options-help">동기화 상태 확인 중</p>
         <p class="options-help">설정만 브라우저 동기화에 저장되며, 페이지 내용이나 복사한 텍스트는 저장하지 않습니다.</p>
       </section>
+
+      <section class="options-section options-transfer" aria-labelledby="transferTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">설정 이식</p>
+            <h2 id="transferTitle">백업·복원·초기화</h2>
+          </div>
+        </div>
+        <p class="options-help">설정을 JSON 파일로 내보내거나 파일에서 가져올 수 있습니다. 가져오기는 기본으로 기존 설정을 유지하며(병합), 확인 후 전체 교체를 선택할 수도 있습니다. 초기화는 선택한 범위만 초기화합니다.</p>
+
+        <div class="transfer-actions">
+          <button id="transferExportBtn" class="transfer-btn" type="button">
+            <span class="transfer-btn-icon">⬇</span> 설정 내보내기
+          </button>
+          <div class="transfer-import-row">
+            <button id="transferImportBtn" class="transfer-btn" type="button">
+              <span class="transfer-btn-icon">⬆</span> 설정 가져오기
+            </button>
+            <input id="transferFileInput" type="file" accept="application/json,.json" class="is-hidden" aria-hidden="true">
+          </div>
+        </div>
+
+        <div id="transferPreview" class="transfer-preview is-hidden" aria-live="polite">
+          <p class="transfer-preview-title">가져오기 미리보기</p>
+          <div id="transferPreviewStats" class="transfer-preview-stats"></div>
+          <p id="transferPreviewWarning" class="transfer-preview-warning is-hidden"></p>
+          <div class="transfer-mode-row">
+            <label class="transfer-radio-label">
+              <input id="transferModeMerge" type="radio" name="transferMode" value="merge" checked>
+              <span>병합 (기존 설정 유지)</span>
+            </label>
+            <label class="transfer-radio-label transfer-radio-replace">
+              <input id="transferModeReplace" type="radio" name="transferMode" value="replace">
+              <span>전체 교체</span>
+            </label>
+          </div>
+          <div class="transfer-confirm-row">
+            <button id="transferConfirmBtn" class="transfer-confirm-btn" type="button">가져오기 실행</button>
+            <button id="transferCancelBtn" class="transfer-cancel-btn" type="button">취소</button>
+          </div>
+        </div>
+
+        <p id="transferStatus" class="site-row-status" role="status" aria-live="polite"></p>
+
+        <div class="transfer-reset-section">
+          <p class="transfer-reset-title">범위 초기화</p>
+          <div class="transfer-reset-grid">
+            <button id="resetCurrentSiteBtn" class="reset-scope-btn" type="button" title="현재 사이트 설정을 삭제하고 전역 기본값을 따르도록 합니다.">
+              현재 사이트 초기화
+            </button>
+            <button id="resetAllSitesBtn" class="reset-scope-btn" type="button" title="저장된 모든 사이트별 설정을 삭제합니다.">
+              모든 사이트 초기화
+            </button>
+            <button id="resetUiPrefsBtn" class="reset-scope-btn" type="button" title="테마를 기본값(다크)으로 되돌립니다.">
+              UI 환경설정 초기화
+            </button>
+            <button id="resetAllSettingsBtn" class="reset-scope-btn reset-scope-btn-danger" type="button" title="모든 설정(전역 ON/OFF, 테마, 사이트 설정)을 초기화합니다. OCR 기록은 영향을 받지 않습니다.">
+              전체 설정 초기화
+            </button>
+          </div>
+        </div>
+      </section>
     </main>
+
+    <div id="transferConfirmDialog" class="transfer-dialog-overlay is-hidden" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+      <div class="transfer-dialog">
+        <p id="dialogTitle" class="transfer-dialog-title">전체 설정을 초기화하시겠습니까?</p>
+        <p class="transfer-dialog-body">이 작업은 되돌릴 수 없습니다. 전체 설정이 초기화되며, 저장된 사이트별 설정도 모두 삭제됩니다. OCR 기록은 유지됩니다.</p>
+        <div class="transfer-dialog-actions">
+          <button id="dialogConfirmBtn" class="transfer-confirm-btn" type="button">초기화 실행</button>
+          <button id="dialogCancelBtn" class="transfer-cancel-btn" type="button">취소</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="replaceImportConfirmDialog" class="transfer-dialog-overlay is-hidden" role="dialog" aria-modal="true" aria-labelledby="replaceImportDialogTitle">
+      <div class="transfer-dialog">
+        <p id="replaceImportDialogTitle" class="transfer-dialog-title">전체 교체를 실행하시겠습니까?</p>
+        <p class="transfer-dialog-body">기존에 저장된 모든 사이트 설정이 삭제되고 가져온 설정으로 대체됩니다. 이 작업은 되돌릴 수 없습니다. OCR 기록은 유지됩니다.</p>
+        <div class="transfer-dialog-actions">
+          <button id="replaceImportConfirmBtn" class="transfer-confirm-btn" type="button">전체 교체 실행</button>
+          <button id="replaceImportCancelBtn" class="transfer-cancel-btn" type="button">취소</button>
+        </div>
+      </div>
+    </div>
     <template id="siteRowTemplate">
       <article class="site-row">
         <div class="site-row-header">
@@ -221,6 +426,8 @@
     <script src="keyboard-utils.js"></script>
     <script src="ocr-session-utils.js"></script>
     <script src="ocr-history.js"></script>
+    <script src="ocr-text-utils.js"></script>
+    <script src="settings-transfer.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
