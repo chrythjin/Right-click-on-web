@@ -1100,6 +1100,9 @@ async function handleOcrHistoryToggle() {
 }
 
 async function handleOcrHistoryDeleteAll() {
+  if (typeof window.confirm === 'function' && !window.confirm('저장된 OCR 기록을 모두 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+    return;
+  }
   try {
     await sendOcrHistoryMessage({ type: 'rcow:deleteAllOcrHistory' });
     elements.ocrHistoryStatus.textContent = 'OCR 기록을 모두 삭제했습니다.';
@@ -1107,6 +1110,9 @@ async function handleOcrHistoryDeleteAll() {
 }
 
 async function handleOcrHistoryDisableDelete() {
+  if (typeof window.confirm === 'function' && !window.confirm('OCR 기록을 끄고 저장된 기록을 모두 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+    return;
+  }
   try {
     await sendOcrHistoryMessage({ type: 'rcow:setOcrHistoryEnabled', enabled: false, deleteEntries: true });
     elements.ocrHistoryStatus.textContent = 'OCR 기록을 끄고 모든 기록을 삭제했습니다.';
@@ -1863,6 +1869,7 @@ async function handleTransferExport() {
     const backup = TRANSFER.exportSettings({
       enabled: fresh.enabled,
       theme: fresh.theme,
+      ocrLanguage: fresh.ocrLanguage,
       domainSettings: fresh.domainSettings
     });
     const json = JSON.stringify(backup, null, 2);
@@ -1914,6 +1921,7 @@ async function handleTransferFileSelected(event) {
       const plan = TRANSFER.planSettingsImport(validated.value, {
         enabled: fresh.enabled,
         theme: fresh.theme,
+        ocrLanguage: fresh.ocrLanguage,
         domainSettings: fresh.domainSettings
       });
       if (!plan.ok) {
@@ -1951,6 +1959,7 @@ async function executeReplaceImport(isReplace) {
     const plan = TRANSFER.planSettingsImport(transferPendingPlan._backup, {
       enabled: fresh.enabled,
       theme: fresh.theme,
+      ocrLanguage: fresh.ocrLanguage,
       domainSettings: fresh.domainSettings
     }, { replace: isReplace });
     if (!plan.ok) {
@@ -1965,6 +1974,9 @@ async function executeReplaceImport(isReplace) {
     }
     if (Object.prototype.hasOwnProperty.call(plan.settings, 'theme') && plan.settings.theme !== state.theme) {
       await handleThemeSelect(plan.settings.theme);
+    }
+    if (Object.prototype.hasOwnProperty.call(plan.settings, 'ocrLanguage')) {
+      await SHARED.safeSyncSet({ ocrLanguage: plan.settings.ocrLanguage }, chrome.storage.local);
     }
     hideTransferPreview();
     showTransferStatus('설정을 가져왔습니다.', 'success');
@@ -2045,6 +2057,7 @@ async function executeResetAllSettings() {
     await writeDomainSettings(() => ({}));
     await writeGlobalEnabled(SHARED.STORAGE_DEFAULTS.enabled);
     await handleThemeSelect(SHARED.DEFAULT_THEME);
+    await SHARED.safeSyncSet({ ocrLanguage: SHARED.STORAGE_DEFAULTS.ocrLanguage }, chrome.storage.local);
     showTransferStatus('전체 설정을 초기화했습니다.', 'success');
     await reloadSettings();
   } catch (err) {

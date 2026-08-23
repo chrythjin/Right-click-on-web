@@ -1129,6 +1129,7 @@ async function handleTriggerOcr() {
     window.close();
   } catch (err) {
     console.warn('Failed to send startCropOnActiveTab message:', err);
+    showDiagnosticStatus((err && err.message) || 'OCR 영역 선택을 시작하지 못했습니다.', 'error');
   }
 }
 

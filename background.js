@@ -90,7 +90,6 @@ async function handleImageOcrContextClick(info, tab) {
     await captureAndOcr(tab, {
       cropRect: current.rect,
       viewport: current.viewport,
-      preprocessingProfile: 'off',
       verifyActiveTab: true,
       source: 'image'
     });
@@ -411,6 +410,9 @@ async function captureAndOcr(tab, request) {
         preprocessingProfile = rememberedProfile;
         useRequestedPreprocessing = true;
       }
+    }
+    if (!preprocessingProfile) {
+      preprocessingProfile = 'off';
     }
     const metadata = {
       tabId: captureTab?.id,
@@ -819,7 +821,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           viewport: message.viewport,
           preprocessingProfile: OCR_SESSION.OCR_PREPROCESSING_PROFILES.includes(message.preprocessingProfile)
             ? message.preprocessingProfile
-            : 'off',
+            : undefined,
           source: OCR_SESSION.normalizeOcrSource(message.source)
         }));
       } catch (error) {

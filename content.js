@@ -863,7 +863,7 @@ function setEnabled(nextEnabled, nextProfile) {
   };
   const profileChanged = !profilesEqual(previousProfile, normalized);
 
-  if (!isActive && eventController && profileChanged) {
+  if (!isActive && eventController && (!normalized.enabled || profileChanged)) {
     eventController.abort();
     eventController = null;
   }
