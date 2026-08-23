@@ -356,12 +356,34 @@ async function describeOcrCaptureFailure(error, tab) {
   return OCR_SESSION.classifyOcrCaptureFailure(error?.message || String(error), context);
 }
 
+async function readHostOcrProfileMemory() {
+  try {
+    const stored = await chrome.storage.local.get(OCR_SESSION.OCR_PROFILE_MEMORY_KEY);
+    return OCR_SESSION.normalizeProfileMemory(stored[OCR_SESSION.OCR_PROFILE_MEMORY_KEY], Date.now());
+  } catch (_) {
+    return {};
+  }
+}
+
+async function rememberHostOcrProfile(hostname, profile) {
+  if (!OCR_SESSION.OCR_PREPROCESSING_PROFILES.includes(profile) || profile === 'off') {
+    return;
+  }
+  const memory = await readHostOcrProfileMemory();
+  const next = OCR_SESSION.rememberOcrProfile(memory, hostname, profile, Date.now());
+  try {
+    await chrome.storage.local.set({ [OCR_SESSION.OCR_PROFILE_MEMORY_KEY]: next });
+  } catch (_) {}
+}
+
 async function captureAndOcr(tab, request) {
   const requestId = await allocateOcrRequestId();
   activeOcrRequestId = requestId;
   const source = OCR_SESSION.normalizeOcrSource(request?.source);
   try {
     let captureTab = tab;
+    let preprocessingProfile = request?.preprocessingProfile;
+    let useRequestedPreprocessing = request?.useRequestedPreprocessing === true;
     if (request?.verifyActiveTab === true) {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!Number.isInteger(activeTab?.id)) {
@@ -378,6 +400,18 @@ async function captureAndOcr(tab, request) {
       }
       captureTab = activeTab;
     }
+    if (!preprocessingProfile) {
+      const profileMemory = await readHostOcrProfileMemory();
+      const rememberedProfile = OCR_SESSION.resolveOcrProfile(
+        profileMemory,
+        SHARED.getHostname(captureTab?.url),
+        Date.now()
+      );
+      if (rememberedProfile) {
+        preprocessingProfile = rememberedProfile;
+        useRequestedPreprocessing = true;
+      }
+    }
     const metadata = {
       tabId: captureTab?.id,
       hostname: SHARED.getHostname(captureTab?.url),
@@ -385,7 +419,7 @@ async function captureAndOcr(tab, request) {
       cropRect: request?.cropRect,
       capturedAt: Date.now(),
       requestId,
-      preprocessingProfile: request?.preprocessingProfile,
+      preprocessingProfile,
       source
     };
     const normalizedMetadata = OCR_SESSION.normalizeCaptureMetadata(metadata);
@@ -406,13 +440,16 @@ async function captureAndOcr(tab, request) {
       throw new Error('OCR 요청이 취소되었습니다.');
     }
     await ensureOffscreenDocument();
+    const languageSettings = await SHARED.resolveSettings({ ocrLanguage: SHARED.STORAGE_DEFAULTS.ocrLanguage });
+    const languages = SHARED.ocrLanguageToList(languageSettings.ocrLanguage);
     const ocrResponse = await chrome.runtime.sendMessage({
       type: 'rcow:runOcr',
       dataUrl,
       cropRect: normalizedMetadata.cropRect,
       devicePixelRatio: normalizedMetadata.devicePixelRatio,
       preprocessingProfile: normalizedMetadata.preprocessingProfile,
-      useRequestedPreprocessing: request?.useRequestedPreprocessing === true,
+      useRequestedPreprocessing,
+      languages,
       requestId
     });
     if (cancelledOcrRequestIds.has(requestId) || ocrResponse?.cancelled === true) {
@@ -424,6 +461,7 @@ async function captureAndOcr(tab, request) {
     metadata.preprocessingProfile = OCR_SESSION.OCR_PREPROCESSING_PROFILES.includes(ocrResponse.preprocessing?.profile)
       ? ocrResponse.preprocessing.profile
       : metadata.preprocessingProfile;
+    void rememberHostOcrProfile(metadata.hostname, metadata.preprocessingProfile);
     void updateOcrSession({
       type: 'success', result: ocrResponse, source, metadata, requestId
     });
@@ -705,6 +743,29 @@ if (chrome.commands && typeof chrome.commands.onCommand?.addListener === 'functi
   chrome.commands.onCommand.addListener(async (command) => {
     if (command === 'trigger-ocr') {
       await triggerCropOnActiveTab();
+      return;
+    }
+    if (command === 'rerun-ocr') {
+      let tabId = null;
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        tabId = Number.isInteger(activeTab?.id) ? activeTab.id : null;
+        await rerunOcrOnActiveTab();
+        if (tabId !== null) {
+          chrome.tabs.sendMessage(tabId, {
+            type: 'rcow:showOcrToast',
+            text: '마지막 영역을 다시 인식했습니다.'
+          }).catch(() => {});
+        }
+      } catch (error) {
+        if (tabId !== null) {
+          chrome.tabs.sendMessage(tabId, {
+            type: 'rcow:showOcrToast',
+            kind: 'error',
+            text: error?.message || '다시 인식할 유효한 마지막 영역이 없습니다.'
+          }).catch(() => {});
+        }
+      }
     }
   });
 }

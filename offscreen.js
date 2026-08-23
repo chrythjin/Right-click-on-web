@@ -95,6 +95,36 @@
     return respondOnce(requestId, { ok: false, cancelled: true, error: 'OCR 요청이 취소되었습니다.' });
   }
 
+  let currentWorkerLanguages = ['kor', 'eng'];
+
+  function sanitizeOcrLanguages(value) {
+    const list = Array.isArray(value)
+      ? [...new Set(
+          value
+            .filter((lang) => typeof lang === 'string' && /^[a-z0-9_+-]{2,12}$/i.test(lang))
+            .map((lang) => lang.toLowerCase())
+        )]
+      : [];
+    return list.length > 0 ? list : ['kor', 'eng'];
+  }
+
+  function ocrLanguagesMatch(a, b) {
+    return a.length === b.length && a.every((lang, index) => lang === b[index]);
+  }
+
+  async function ensureWorker(languages) {
+    const desired = sanitizeOcrLanguages(languages);
+    if (workerPromise && !ocrLanguagesMatch(desired, currentWorkerLanguages)) {
+      try {
+        const existing = await workerPromise;
+        await existing.terminate();
+      } catch (_) {}
+      workerPromise = null;
+    }
+    currentWorkerLanguages = desired;
+    return getWorker();
+  }
+
   async function initTesseractWorker() {
     const options = {
       workerPath: chrome.runtime.getURL('lib/worker.min.js'),
@@ -109,7 +139,7 @@
     };
 
     try {
-      const worker = await Tesseract.createWorker(['kor', 'eng'], 1, options);
+      const worker = await Tesseract.createWorker(currentWorkerLanguages, 1, options);
       return worker;
     } catch (simdErr) {
       console.warn('SIMD core init failed, falling back to standard LSTM core:', simdErr);
@@ -117,7 +147,7 @@
         ...options,
         corePath: chrome.runtime.getURL('lib/tesseract-core-lstm.wasm.js')
       };
-      const worker = await Tesseract.createWorker(['kor', 'eng'], 1, fallbackOptions);
+      const worker = await Tesseract.createWorker(currentWorkerLanguages, 1, fallbackOptions);
       return worker;
     }
   }
@@ -228,7 +258,7 @@
         if (!pendingRequests.has(requestId)) return;
         activeRequestId = requestId;
         sendProgress(requestId, 0, 'preprocessing', true);
-        const worker = await getWorker();
+        const worker = await ensureWorker(message.languages);
         if (!pendingRequests.has(requestId)) return;
         const plan = OCR_IMAGE_UTILS.createPreprocessingPlan(
           croppedImage.crop.width,

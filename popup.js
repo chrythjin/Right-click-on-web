@@ -328,13 +328,14 @@ function render() {
   } else if (state.sessionActive) {
     elements.presetHint.textContent = '세션 활성 중 — 활성화만 세션이 덮어쓰며 프로필은 도메인(또는 기본 완전)을 따릅니다. 프로필 선택은 즉시 도메인에 저장됩니다.';
   } else if (!presetState.hasMatchedEntry) {
-    elements.presetHint.textContent = '완전(기본): 모든 차단 해제. 안전: 드래그/드롭·오버레이 제거 최소화. 업로드 보호: 드롭존 보존. 도메인 ON 후 프리셋을 선택하세요.';
+    elements.presetHint.textContent = '완전(기본): 모든 차단 해제. 안전: 드래그/드롭·오버레이 제거 최소화. 업로드 보호: 드롭존 보존. 도메인 ON 후 프리셋을 선택하세요.' +
+      computePresetSafetySuffix(SHARED.PRESET_COMPLETE, SHARED);
   } else {
     elements.presetHint.textContent = presetState.displayPreset === SHARED.PRESET_SAFE
       ? '안전 — 드래그/드롭·오버레이 제거 최소화 (사이트 호환성 우선)'
       : presetState.displayPreset === SHARED.PRESET_UPLOAD_SAFE
         ? '업로드 보호 — 드롭존 보존 (업로드 사이트 호환성)'
-        : '완전 — 모든 차단 해제 (기본)';
+        : '완전 — 모든 차단 해제 (기본)' + computePresetSafetySuffix(presetState.displayPreset, SHARED);
   }
   elements.effectiveSource.textContent = computeEffectiveSourceText(
     presetState.source, presetState.displayPreset, presetState.isPopupPreset, presetState.hasMatchedEntry, SHARED
@@ -541,6 +542,12 @@ function renderQuickRecovery() {
   pauseBtn.querySelector('.recovery-button-desc').textContent = '확장 온 · 이 사이트만 잠시 끄기';
   offBtn.disabled = false;
   hint.textContent = '확장 전체를 끄지 않고 이 사이트만 설정을 조정합니다.';
+}
+
+function computePresetSafetySuffix(displayPreset, sharedModule) {
+  return displayPreset === sharedModule.PRESET_COMPLETE
+    ? ' 이 사이트가 깨지면 안전 프리셋 또는 Lite 모드로 낮춰 보세요.'
+    : '';
 }
 
 function computeMainWorldNotice(state, modeLite) {
@@ -1374,6 +1381,7 @@ loadState().then(render).catch(() => {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     computeMainWorldNotice,
+    computePresetSafetySuffix,
     classifyPreset,
     computePresetState,
     computePresetEntry,

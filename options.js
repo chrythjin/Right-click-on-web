@@ -5,6 +5,7 @@ const OCR_SESSION = globalThis.RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS;
 const OCR_HISTORY = globalThis.RIGHT_CLICK_ON_WEB_OCR_HISTORY;
 const OCR_TEXT = globalThis.RIGHT_CLICK_ON_WEB_OCR_TEXT_UTILS;
 const CORRECTION_KEY = 'rcowOcrCorrectionDictionary';
+const CORRECTION_ENABLED_KEY = 'rcowOcrCorrectionEnabled';
 const CORRECTION_MAX_ENTRIES = 200;
 const CORRECTION_MAX_BYTES = 65536;
 const UNDO_STACK_SIZE = 50;
@@ -26,6 +27,7 @@ const state = {
   ocrRerunInFlight: false,
   ocrHistoryEnabled: false,
   ocrHistory: [],
+  ocrLanguage: 'kor+eng',
   theme: SHARED.DEFAULT_THEME,
   ocrUndoStack: [],
   ocrRedoStack: [],
@@ -120,6 +122,9 @@ const elements = {
   ocrFindCounter: document.getElementById('ocrFindCounter'),
   ocrReplaceCurrentBtn: document.getElementById('ocrReplaceCurrentBtn'),
   ocrReplaceAllBtn: document.getElementById('ocrReplaceAllBtn'),
+  ocrLanguageKor: document.getElementById('ocrLanguageKor'),
+  ocrLanguageEng: document.getElementById('ocrLanguageEng'),
+  ocrLanguageStatus: document.getElementById('ocrLanguageStatus'),
   optThemeDark: document.getElementById('optThemeDark'),
   optThemeNeon: document.getElementById('optThemeNeon'),
   optThemeLight: document.getElementById('optThemeLight')
@@ -140,6 +145,9 @@ async function loadState() {
   state.theme = SHARED.resolveTheme(settings.theme);
   applyTheme(state.theme);
   syncThemeButtons();
+
+  state.ocrLanguage = SHARED.normalizeOcrLanguage(settings.ocrLanguage);
+  renderOcrLanguageCheckboxes();
 
   try {
     state.syncBytesInUse = await SHARED.getBytesInUse(chrome.storage.sync);
@@ -507,6 +515,28 @@ function updateFindCounter() {
 
 function highlightFindMatch(index) {
   updateFindCounter();
+  const textarea = elements.ocrEditedText;
+  const find = elements.ocrFindInput?.value || '';
+  if (!textarea || !find) return;
+  const pos = state.ocrFindMatches[index];
+  if (typeof pos !== 'number' || pos < 0) return;
+  if (typeof textarea.focus === 'function') textarea.focus();
+  if (typeof textarea.setSelectionRange === 'function') {
+    textarea.setSelectionRange(pos, pos + find.length);
+  }
+  try {
+    const fullText = typeof textarea.value === 'string'
+      ? textarea.value
+      : (state.ocrEditedText || '');
+    const linesBefore = fullText.slice(0, pos).split('\n').length - 1;
+    const computed = typeof getComputedStyle === 'function'
+      ? parseFloat(getComputedStyle(textarea).lineHeight)
+      : NaN;
+    const lineHeight = Number.isFinite(computed) && computed > 0 ? computed : 18;
+    const viewHeight = typeof textarea.clientHeight === 'number' ? textarea.clientHeight : 0;
+    const targetTop = Math.max(0, linesBefore * lineHeight - viewHeight / 2);
+    if (Number.isFinite(targetTop)) textarea.scrollTop = targetTop;
+  } catch (_) { }
 }
 
 function handleFindInput() {
@@ -567,7 +597,8 @@ function handleApplyCorrection() {
 
 async function loadCorrectionDictionary() {
   try {
-    const result = await chrome.storage.local.get(CORRECTION_KEY);
+    const result = await chrome.storage.local.get([CORRECTION_KEY, CORRECTION_ENABLED_KEY]);
+    state.ocrCorrectionEnabled = result[CORRECTION_ENABLED_KEY] === true;
     const raw = result[CORRECTION_KEY];
     if (Array.isArray(raw)) {
       const valid = raw.slice(0, CORRECTION_MAX_ENTRIES).filter(e =>
@@ -575,7 +606,15 @@ async function loadCorrectionDictionary() {
       );
       const bytes = new TextEncoder().encode(JSON.stringify(valid)).length;
       if (bytes > CORRECTION_MAX_BYTES) {
-        state.ocrCorrectionDictionary = valid.slice(0, Math.max(1, CORRECTION_MAX_ENTRIES - 1));
+        let usedBytes = 2;
+        const kept = [];
+        for (const entry of valid) {
+          const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + (kept.length > 0 ? 1 : 0);
+          if (usedBytes + entryBytes > CORRECTION_MAX_BYTES) break;
+          usedBytes += entryBytes;
+          kept.push(entry);
+        }
+        state.ocrCorrectionDictionary = kept;
       } else {
         state.ocrCorrectionDictionary = valid;
       }
@@ -602,19 +641,26 @@ async function saveCorrectionDictionary() {
   }
 }
 
-async function handleCorrectionToggle() {
-  state.ocrCorrectionEnabled = !state.ocrCorrectionEnabled;
+function renderCorrectionToggle() {
   if (state.ocrCorrectionEnabled) {
     elements.ocrCorrectionControls?.classList.remove('is-hidden');
-    elements.ocrCorrectionToggle.textContent = 'ON';
-    elements.ocrCorrectionToggle.classList.remove('is-off');
   } else {
     elements.ocrCorrectionControls?.classList.add('is-hidden');
-    elements.ocrCorrectionToggle.textContent = 'OFF';
-    elements.ocrCorrectionToggle.classList.add('is-off');
   }
-  elements.ocrCorrectionToggle.setAttribute('aria-pressed', String(state.ocrCorrectionEnabled));
+  if (elements.ocrCorrectionToggle) {
+    elements.ocrCorrectionToggle.textContent = state.ocrCorrectionEnabled ? 'ON' : 'OFF';
+    elements.ocrCorrectionToggle.classList.toggle('is-off', !state.ocrCorrectionEnabled);
+    elements.ocrCorrectionToggle.setAttribute('aria-pressed', String(state.ocrCorrectionEnabled));
+  }
+}
+
+async function handleCorrectionToggle() {
+  state.ocrCorrectionEnabled = !state.ocrCorrectionEnabled;
+  renderCorrectionToggle();
   renderCorrectionApplyButton();
+  try {
+    await chrome.storage.local.set({ [CORRECTION_ENABLED_KEY]: state.ocrCorrectionEnabled });
+  } catch (_) { }
 }
 
 function renderCorrectionList() {
@@ -745,6 +791,43 @@ function applyCorrectionToEdited() {
   if (elements.ocrCorrectionStatus) {
     elements.ocrCorrectionStatus.textContent = '교정 사전 적용 완료';
   }
+}
+
+function renderOcrLanguageCheckboxes() {
+  const list = SHARED.ocrLanguageToList(state.ocrLanguage);
+  if (elements.ocrLanguageKor) elements.ocrLanguageKor.checked = list.includes('kor');
+  if (elements.ocrLanguageEng) elements.ocrLanguageEng.checked = list.includes('eng');
+}
+
+async function handleOcrLanguageChange(changedElement) {
+  const list = [];
+  if (elements.ocrLanguageKor?.checked) list.push('kor');
+  if (elements.ocrLanguageEng?.checked) list.push('eng');
+  if (list.length === 0) {
+    if (changedElement) changedElement.checked = true;
+    if (elements.ocrLanguageStatus) {
+      elements.ocrLanguageStatus.textContent = '최소 1개의 언어를 선택해야 합니다.';
+    }
+    renderOcrLanguageCheckboxes();
+    return;
+  }
+  state.ocrLanguage = SHARED.ocrLanguagesToSetting(list);
+  try {
+    await SHARED.safeSyncSet({ ocrLanguage: state.ocrLanguage }, chrome.storage.local);
+    if (elements.ocrLanguageStatus) {
+      elements.ocrLanguageStatus.textContent = '저장됨 — 다음 OCR 인식부터 적용됩니다.';
+    }
+  } catch (_) {
+    if (elements.ocrLanguageStatus) {
+      elements.ocrLanguageStatus.textContent = '언어 설정을 저장하지 못했습니다.';
+    }
+  }
+  renderOcrLanguageCheckboxes();
+}
+
+function setupOcrLanguageControls() {
+  elements.ocrLanguageKor?.addEventListener('change', () => handleOcrLanguageChange(elements.ocrLanguageKor));
+  elements.ocrLanguageEng?.addEventListener('change', () => handleOcrLanguageChange(elements.ocrLanguageEng));
 }
 
 function handleOcrAcceptNew() {
@@ -2057,7 +2140,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 attachOcrEditListeners();
+setupOcrLanguageControls();
 loadCorrectionDictionary().then(() => {
+  renderCorrectionToggle();
   renderCorrectionList();
   renderCorrectionApplyButton();
 });

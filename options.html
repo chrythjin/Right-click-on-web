@@ -236,6 +236,27 @@
         <p id="ocrCorrectionStatus" class="site-row-status" role="status" aria-live="polite"></p>
       </section>
 
+      <section class="options-section ocr-language-section" aria-labelledby="ocrLanguageTitle">
+        <div class="section-heading">
+          <div>
+            <p class="label">오프라인 OCR 언어</p>
+            <h2 id="ocrLanguageTitle">인식 언어 선택</h2>
+          </div>
+        </div>
+        <p class="options-help">패키지에 포함된 로컬 한국어·영어 모델만 사용하며 외부에서 모델을 내려받지 않습니다. 최소 1개의 언어가 필요하며 변경은 다음 인식부터 적용됩니다.</p>
+        <div class="ocr-detail-filter-row" role="group" aria-label="OCR 인식 언어">
+          <label class="ocr-detail-toggle-label">
+            <input type="checkbox" id="ocrLanguageKor" aria-label="한국어 OCR 인식">
+            <span>한국어 (kor)</span>
+          </label>
+          <label class="ocr-detail-toggle-label">
+            <input type="checkbox" id="ocrLanguageEng" aria-label="English OCR 인식">
+            <span>English (eng)</span>
+          </label>
+        </div>
+        <p id="ocrLanguageStatus" class="site-row-status" role="status" aria-live="polite"></p>
+      </section>
+
       <section class="options-section ocr-history-section" aria-labelledby="ocrHistoryTitle">
         <div class="section-heading">
           <div>

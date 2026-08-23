@@ -343,17 +343,105 @@ function removeSelectionStyles() {
   sweepDetachedShadowRoots();
 }
 
+const INTERACTIVE_OVERLAY_TAGS = new Set([
+  'A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'IMG', 'PICTURE', 'VIDEO',
+  'AUDIO', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'SUMMARY', 'LABEL'
+]);
+const INTERACTIVE_OVERLAY_ROLES = new Set(['button', 'dialog', 'link', 'menuitem', 'option', 'tab']);
+const COMPUTED_OVERLAY_MIN_COVER_RATIO = 0.5;
+
+function isInteractiveOverlayNode(element) {
+  if (INTERACTIVE_OVERLAY_TAGS.has(element.tagName)) {
+    return true;
+  }
+  if (element.isContentEditable) {
+    return true;
+  }
+  try {
+    if (element.getAttribute('tabindex') !== null) {
+      return true;
+    }
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    return INTERACTIVE_OVERLAY_ROLES.has(role);
+  } catch (_) {
+    return false;
+  }
+}
+
+function hasInteractiveOverlayContent(element) {
+  if (typeof element.querySelectorAll !== 'function') {
+    return false;
+  }
+  for (const descendant of element.querySelectorAll('*')) {
+    if (isInteractiveOverlayNode(descendant)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function coversMajorViewport(element) {
+  if (typeof element.getBoundingClientRect !== 'function') {
+    return false;
+  }
+  const viewportWidth = typeof window !== 'undefined' && typeof window.innerWidth === 'number'
+    ? window.innerWidth
+    : 0;
+  const viewportHeight = typeof window !== 'undefined' && typeof window.innerHeight === 'number'
+    ? window.innerHeight
+    : 0;
+  if (!viewportWidth || !viewportHeight) {
+    return false;
+  }
+  try {
+    const rect = element.getBoundingClientRect();
+    return (
+      rect.width >= viewportWidth * COMPUTED_OVERLAY_MIN_COVER_RATIO &&
+      rect.height >= viewportHeight * COMPUTED_OVERLAY_MIN_COVER_RATIO
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function resolveOverlayPosition(element) {
+  const inlinePosition = (element.style.position || '').toLowerCase().trim();
+  if (inlinePosition === 'absolute' || inlinePosition === 'fixed') {
+    return { position: inlinePosition, computed: false };
+  }
+  if (typeof getComputedStyle !== 'function') {
+    return { position: inlinePosition, computed: false };
+  }
+  try {
+    const computedPosition = (getComputedStyle(element).position || '').toLowerCase().trim();
+    return {
+      position: computedPosition,
+      computed: computedPosition === 'absolute' || computedPosition === 'fixed'
+    };
+  } catch (_) {
+    return { position: inlinePosition, computed: false };
+  }
+}
+
 function neutralizeBlockOverlay(element) {
   if (!(element instanceof HTMLElement)) {
     return false;
   }
 
-  const declaredPosition = (element.style.position || '').toLowerCase().trim();
-  if (declaredPosition !== 'absolute' && declaredPosition !== 'fixed') {
+  const { position, computed } = resolveOverlayPosition(element);
+  if (position !== 'absolute' && position !== 'fixed') {
     return false;
   }
 
   if ((element.textContent || '').trim().length > 0) {
+    return false;
+  }
+
+  if (computed && !coversMajorViewport(element)) {
+    return false;
+  }
+
+  if (hasInteractiveOverlayContent(element)) {
     return false;
   }
 

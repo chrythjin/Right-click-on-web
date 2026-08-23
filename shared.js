@@ -186,6 +186,30 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     return { enabled, mode, preset, features };
   }
 
+  const OCR_SUPPORTED_LANGUAGES = Object.freeze(['kor', 'eng']);
+  const DEFAULT_OCR_LANGUAGE = 'kor+eng';
+  const OCR_LANGUAGE_LABELS = Object.freeze({ kor: '한국어', eng: 'English' });
+
+  function normalizeOcrLanguage(value) {
+    if (typeof value !== 'string') {
+      return DEFAULT_OCR_LANGUAGE;
+    }
+    const unique = [...new Set(
+      value.trim().toLowerCase().split('+').filter((part) => OCR_SUPPORTED_LANGUAGES.includes(part))
+    )];
+    const ordered = OCR_SUPPORTED_LANGUAGES.filter((lang) => unique.includes(lang));
+    return ordered.length > 0 ? ordered.join('+') : DEFAULT_OCR_LANGUAGE;
+  }
+
+  function ocrLanguageToList(value) {
+    return normalizeOcrLanguage(value).split('+');
+  }
+
+  function ocrLanguagesToSetting(languageList) {
+    const list = Array.isArray(languageList) ? languageList : [];
+    return normalizeOcrLanguage(list.join('+'));
+  }
+
   function normalizeDomainSettings(domainSettings) {
     const out = Object.create(null);
     if (!isPlainObject(domainSettings)) {
@@ -220,7 +244,13 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     VALID_THEMES,
     resolveTheme,
     parseDomainSetting,
-    normalizeDomainSettings
+    normalizeDomainSettings,
+    OCR_SUPPORTED_LANGUAGES,
+    DEFAULT_OCR_LANGUAGE,
+    OCR_LANGUAGE_LABELS,
+    normalizeOcrLanguage,
+    ocrLanguageToList,
+    ocrLanguagesToSetting
   });
 })();
 
@@ -230,7 +260,12 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeDomainSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeDomainSettings,
     resolveTheme: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.resolveTheme,
     VALID_THEMES: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.VALID_THEMES,
-    DEFAULT_THEME: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_THEME
+    DEFAULT_THEME: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_THEME,
+    OCR_SUPPORTED_LANGUAGES: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.OCR_SUPPORTED_LANGUAGES,
+    DEFAULT_OCR_LANGUAGE: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_OCR_LANGUAGE,
+    normalizeOcrLanguage: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeOcrLanguage,
+    ocrLanguageToList: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.ocrLanguageToList,
+    ocrLanguagesToSetting: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.ocrLanguagesToSetting
   });
 } else {
 (function sharedInit(SETTINGS_UTILS) {
@@ -259,7 +294,13 @@ if (typeof module !== 'undefined' && module.exports) {
     VALID_THEMES,
     resolveTheme,
     parseDomainSetting,
-    normalizeDomainSettings
+    normalizeDomainSettings,
+    OCR_SUPPORTED_LANGUAGES,
+    DEFAULT_OCR_LANGUAGE,
+    OCR_LANGUAGE_LABELS,
+    normalizeOcrLanguage,
+    ocrLanguageToList,
+    ocrLanguagesToSetting
   } = SETTINGS_UTILS;
 
   // Public suffix blocklist — minimal subset of common multi-part TLDs.
@@ -300,7 +341,8 @@ if (typeof module !== 'undefined' && module.exports) {
 const STORAGE_DEFAULTS = Object.freeze({
     enabled: true,
     domainSettings: Object.freeze({}),
-    theme: 'dark'
+    theme: 'dark',
+    ocrLanguage: 'kor+eng'
   });
 
   // ---- v0.5.0: Lite/Ultimate mode schema ----
@@ -706,7 +748,13 @@ const STORAGE_DEFAULTS = Object.freeze({
     isQuotaExceeded,
     getBytesInUse,
     safeSyncSet,
-    resolveSettings
+    resolveSettings,
+    OCR_SUPPORTED_LANGUAGES,
+    DEFAULT_OCR_LANGUAGE,
+    OCR_LANGUAGE_LABELS,
+    normalizeOcrLanguage,
+    ocrLanguageToList,
+    ocrLanguagesToSetting
   };
 
   if (typeof globalThis !== 'undefined') {

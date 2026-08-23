@@ -516,6 +516,13 @@
       }
       sendResponse(startCrop());
     }
+    if (message && message.type === 'rcow:showOcrToast') {
+      const kind = message.kind === 'error' ? 'error' : 'success';
+      showToast(typeof message.text === 'string' && message.text
+        ? message.text
+        : 'OCR 작업이 완료되었습니다.', kind, 3500);
+      sendResponse({ ok: true });
+    }
     if (message && message.type === 'rcow:getViewport') {
       const devicePixelRatio = window.devicePixelRatio || 1;
       sendResponse({

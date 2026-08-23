@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Restores common right-click, text selection, copy, and drag interactions, and extracts text via local OCR on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
@@ -66,6 +66,13 @@
         "mac": "Command+Shift+S"
       },
       "description": "화면 영역 텍스트 추출 (OCR 캡처)"
+    },
+    "rerun-ocr": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "마지막 OCR 영역 다시 인식"
     }
   },
   "content_security_policy": {

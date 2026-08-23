@@ -68,6 +68,57 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
       .sort((left, right) => PROFILE_COST[left] - PROFILE_COST[right] || left.localeCompare(right))[0] || null;
   }
 
+  const OCR_PROFILE_MEMORY_KEY = 'rcowOcrProfileByHost';
+  const OCR_PROFILE_MEMORY_MAX_ENTRIES = 50;
+  const OCR_PROFILE_MEMORY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+  function isValidProfileMemoryHostname(hostname) {
+    return typeof hostname === 'string' && hostname.length > 0 && hostname.length <= 253;
+  }
+
+  function normalizeProfileMemory(value, now = Date.now()) {
+    const entries = [];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const hostname of Object.keys(value)) {
+        const entry = value[hostname];
+        const updatedAt = Number.isFinite(entry?.updatedAt) ? entry.updatedAt : 0;
+        if (!isValidProfileMemoryHostname(hostname) ||
+            typeof entry?.profile !== 'string' ||
+            !OCR_PREPROCESSING_PROFILES.includes(entry.profile) ||
+            entry.profile === 'off' ||
+            updatedAt <= 0 ||
+            now - updatedAt > OCR_PROFILE_MEMORY_TTL_MS ||
+            now - updatedAt < -60 * 1000) {
+          continue;
+        }
+        entries.push([hostname, Object.freeze({ profile: entry.profile, updatedAt })]);
+      }
+    }
+    entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt || a[0].localeCompare(b[0]));
+    const out = Object.create(null);
+    for (const [hostname, entry] of entries.slice(0, OCR_PROFILE_MEMORY_MAX_ENTRIES)) {
+      out[hostname] = entry;
+    }
+    return out;
+  }
+
+  function rememberOcrProfile(memory, hostname, profile, now = Date.now()) {
+    if (!isValidProfileMemoryHostname(hostname) ||
+        typeof profile !== 'string' ||
+        !OCR_PREPROCESSING_PROFILES.includes(profile) ||
+        profile === 'off') {
+      return normalizeProfileMemory(memory, now);
+    }
+    return normalizeProfileMemory({ ...normalizeProfileMemory(memory, now), [hostname]: { profile, updatedAt: now } }, now);
+  }
+
+  function resolveOcrProfile(memory, hostname, now = Date.now()) {
+    if (!isValidProfileMemoryHostname(hostname)) {
+      return null;
+    }
+    return normalizeProfileMemory(memory, now)[hostname]?.profile || null;
+  }
+
   function normalizeCrop(value) {
     const crop = value && typeof value === 'object' ? value : {};
     return {
@@ -518,6 +569,12 @@ const RIGHT_CLICK_ON_WEB_OCR_SESSION_UTILS = (() => {
     normalizeOcrSource,
     normalizeAttemptSummaries,
     recommendOcrProfile,
+    OCR_PROFILE_MEMORY_KEY,
+    OCR_PROFILE_MEMORY_MAX_ENTRIES,
+    OCR_PROFILE_MEMORY_TTL_MS,
+    normalizeProfileMemory,
+    rememberOcrProfile,
+    resolveOcrProfile,
     createLatestOcrResult,
     normalizeCaptureMetadata,
     normalizeLastRegionRerun,
