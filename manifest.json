@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Right-click on Web",
-  "version": "0.10.8",
+  "version": "0.11.0",
   "description": "Restores common right-click, text selection, copy, and drag interactions, and extracts text via local OCR on restrictive websites.",
   "icons": {
     "128": "icons/icon128.png",
@@ -45,7 +45,8 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["shared.js", "content.js"],
+      "js": ["shared.js", "content.js", "video-controller.js"],
+      "css": ["video-controller.css"],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,

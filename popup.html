@@ -93,6 +93,28 @@
         <div id="featureImpactContent" class="feature-impact-grid"></div>
       </section>
 
+      <section id="videoSpeedCard" class="video-speed-card" aria-label="동영상 배속 조절">
+        <div class="video-speed-header">
+          <p class="label">동영상 배속 제어</p>
+          <span id="videoSpeedDisplay" class="video-speed-badge">1.00x</span>
+        </div>
+        <div class="video-speed-controls">
+          <button id="videoSpeedDec" class="video-speed-btn" type="button" title="0.1x 감속 (단축키: [)">−</button>
+          <input id="videoSpeedSlider" type="range" class="video-speed-slider" min="0.1" max="16" step="0.05" value="1.0" aria-label="동영상 배속 슬라이더">
+          <button id="videoSpeedInc" class="video-speed-btn" type="button" title="0.1x 가속 (단축키: ])">+</button>
+        </div>
+        <div class="video-speed-presets" role="group" aria-label="빠른 배속 프리셋">
+          <button type="button" class="video-speed-chip is-active" data-speed="1.0">1.0x</button>
+          <button type="button" class="video-speed-chip" data-speed="1.25">1.25x</button>
+          <button type="button" class="video-speed-chip" data-speed="1.5">1.5x</button>
+          <button type="button" class="video-speed-chip" data-speed="1.75">1.75x</button>
+          <button type="button" class="video-speed-chip" data-speed="2.0">2.0x</button>
+          <button type="button" class="video-speed-chip" data-speed="2.5">2.5x</button>
+          <button type="button" class="video-speed-chip" data-speed="3.0">3.0x</button>
+        </div>
+        <p class="video-speed-hint">단축키: [ / ] 배속 조절, R 리셋, Z / X 10초 이동, V OSD 토글</p>
+      </section>
+
       <section class="theme-card">
         <p class="label">테마 색</p>
         <div class="theme-toggle" role="radiogroup" aria-label="테마">

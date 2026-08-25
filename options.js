@@ -36,7 +36,8 @@ const state = {
   ocrFindVisible: false,
   ocrFindCurrent: 0,
   ocrFindMatches: [],
-  ocrCleanupRules: { ...OCR_TEXT.DEFAULT_CLEANUP_PLAN }
+  ocrCleanupRules: { ...OCR_TEXT.DEFAULT_CLEANUP_PLAN },
+  videoSpeedSettings: { ...SHARED.DEFAULT_VIDEO_SPEED_SETTINGS }
 };
 
 const elements = {
@@ -125,6 +126,12 @@ const elements = {
   ocrLanguageKor: document.getElementById('ocrLanguageKor'),
   ocrLanguageEng: document.getElementById('ocrLanguageEng'),
   ocrLanguageStatus: document.getElementById('ocrLanguageStatus'),
+  videoSpeedGlobalToggle: document.getElementById('videoSpeedGlobalToggle'),
+  videoDefaultSpeedInput: document.getElementById('videoDefaultSpeedInput'),
+  videoSpeedStepSelect: document.getElementById('videoSpeedStepSelect'),
+  videoShowOsdCheckbox: document.getElementById('videoShowOsdCheckbox'),
+  videoSpeedLockCheckbox: document.getElementById('videoSpeedLockCheckbox'),
+  videoSpeedStatus: document.getElementById('videoSpeedStatus'),
   optThemeDark: document.getElementById('optThemeDark'),
   optThemeNeon: document.getElementById('optThemeNeon'),
   optThemeLight: document.getElementById('optThemeLight')
@@ -148,6 +155,9 @@ async function loadState() {
 
   state.ocrLanguage = SHARED.normalizeOcrLanguage(settings.ocrLanguage);
   renderOcrLanguageCheckboxes();
+
+  state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(settings.videoSpeedSettings);
+  renderVideoSpeedSettings();
 
   try {
     state.syncBytesInUse = await SHARED.getBytesInUse(chrome.storage.sync);
@@ -207,6 +217,69 @@ function handleThemeKeydown(event) {
   if (!next) return;
   next.el.focus();
   handleThemeSelect(nextTheme).catch(console.error);
+}
+
+let videoSpeedSaveSequence = 0;
+let videoSpeedSavePending = 0;
+let videoSpeedStatusTimer = null;
+
+function renderVideoSpeedSettings() {
+  const s = state.videoSpeedSettings || SHARED.DEFAULT_VIDEO_SPEED_SETTINGS;
+  elements.videoSpeedGlobalToggle.setAttribute('aria-pressed', String(s.enabled));
+  elements.videoSpeedGlobalToggle.textContent = s.enabled ? 'ON' : 'OFF';
+  elements.videoSpeedGlobalToggle.classList.toggle('is-off', !s.enabled);
+  elements.videoDefaultSpeedInput.value = String(s.defaultSpeed || 1.0);
+  elements.videoSpeedStepSelect.value = String(s.speedStep || 0.1);
+  elements.videoShowOsdCheckbox.checked = Boolean(s.showOsd);
+  elements.videoSpeedLockCheckbox.checked = Boolean(s.speedLock);
+  elements.videoDefaultSpeedInput.disabled = !s.enabled;
+  elements.videoSpeedStepSelect.disabled = !s.enabled;
+  elements.videoShowOsdCheckbox.disabled = !s.enabled;
+  elements.videoSpeedLockCheckbox.disabled = !s.enabled;
+}
+
+async function saveVideoSpeedSettings(patch) {
+  const requestSequence = ++videoSpeedSaveSequence;
+  videoSpeedSavePending += 1;
+  state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings({
+    ...state.videoSpeedSettings,
+    ...patch
+  });
+  renderVideoSpeedSettings();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'rcow:updateVideoSpeedSettings',
+      payload: { patch }
+    });
+    if (!response?.ok) {
+      throw new Error(response?.error || '동영상 배속 설정 저장에 실패했습니다.');
+    }
+    if (requestSequence !== videoSpeedSaveSequence) return;
+    state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(response.settings);
+    renderVideoSpeedSettings();
+    if (elements.videoSpeedStatus) {
+      if (videoSpeedStatusTimer) clearTimeout(videoSpeedStatusTimer);
+      elements.videoSpeedStatus.textContent = '동영상 배속 설정이 저장되었습니다.';
+      videoSpeedStatusTimer = setTimeout(() => {
+        if (elements.videoSpeedStatus) elements.videoSpeedStatus.textContent = '';
+        videoSpeedStatusTimer = null;
+      }, 2000);
+    }
+  } catch (err) {
+    if (requestSequence !== videoSpeedSaveSequence) return;
+    const settings = await SHARED.resolveSettings(SHARED.STORAGE_DEFAULTS);
+    state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(settings.videoSpeedSettings);
+    renderVideoSpeedSettings();
+    if (elements.videoSpeedStatus) {
+      if (videoSpeedStatusTimer) {
+        clearTimeout(videoSpeedStatusTimer);
+        videoSpeedStatusTimer = null;
+      }
+      elements.videoSpeedStatus.textContent = '설정 저장 실패: ' + err.message;
+    }
+  } finally {
+    videoSpeedSavePending -= 1;
+  }
 }
 
 function sessionStorageArea() {
@@ -2138,6 +2211,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (changes.enabled || changes.domainSettings) {
       reloadSettings().catch(console.error);
     }
+    if (changes.videoSpeedSettings) {
+      if (videoSpeedSavePending === 0) {
+        state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(changes.videoSpeedSettings.newValue);
+        renderVideoSpeedSettings();
+      }
+    }
   }
   if (areaName === 'local' && (changes[OCR_HISTORY.OCR_HISTORY_ENABLED_KEY] || changes[OCR_HISTORY.OCR_HISTORY_KEY])) {
     loadOcrHistory().catch(console.error);
@@ -2152,8 +2231,56 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
+function setupVideoSpeedListeners() {
+  if (elements.videoSpeedGlobalToggle) {
+    elements.videoSpeedGlobalToggle.addEventListener('click', () => {
+      saveVideoSpeedSettings({
+        enabled: !state.videoSpeedSettings.enabled
+      }).catch(console.error);
+    });
+  }
+  if (elements.videoDefaultSpeedInput) {
+    elements.videoDefaultSpeedInput.addEventListener('change', () => {
+      const rawValue = elements.videoDefaultSpeedInput.value.trim();
+      const val = Number(rawValue);
+      if (rawValue !== '' && Number.isFinite(val)) {
+        saveVideoSpeedSettings({
+          defaultSpeed: val
+        }).catch(console.error);
+      } else {
+        renderVideoSpeedSettings();
+      }
+    });
+  }
+  if (elements.videoSpeedStepSelect) {
+    elements.videoSpeedStepSelect.addEventListener('change', () => {
+      const val = Number(elements.videoSpeedStepSelect.value);
+      if (Number.isFinite(val)) {
+        saveVideoSpeedSettings({
+          speedStep: val
+        }).catch(console.error);
+      }
+    });
+  }
+  if (elements.videoShowOsdCheckbox) {
+    elements.videoShowOsdCheckbox.addEventListener('change', () => {
+      saveVideoSpeedSettings({
+        showOsd: elements.videoShowOsdCheckbox.checked
+      }).catch(console.error);
+    });
+  }
+  if (elements.videoSpeedLockCheckbox) {
+    elements.videoSpeedLockCheckbox.addEventListener('change', () => {
+      saveVideoSpeedSettings({
+        speedLock: elements.videoSpeedLockCheckbox.checked
+      }).catch(console.error);
+    });
+  }
+}
+
 attachOcrEditListeners();
 setupOcrLanguageControls();
+setupVideoSpeedListeners();
 loadCorrectionDictionary().then(() => {
   renderCorrectionToggle();
   renderCorrectionList();

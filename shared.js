@@ -210,6 +210,107 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     return normalizeOcrLanguage(list.join('+'));
   }
 
+  const MIN_VIDEO_SPEED = 0.1;
+  const MAX_VIDEO_SPEED = 16.0;
+  const DEFAULT_VIDEO_SPEED = 1.0;
+  const DEFAULT_VIDEO_SPEED_SETTINGS = Object.freeze({
+    enabled: false,
+    defaultSpeed: 1.0,
+    speedStep: 0.1,
+    bigSpeedStep: 0.5,
+    fastForwardSpeed: 3.0,
+    rewindTime: 10,
+    forwardTime: 10,
+    showOsd: true,
+    speedLock: true,
+    shortcuts: Object.freeze({
+      decrease: '[',
+      increase: ']',
+      bigDecrease: '{',
+      bigIncrease: '}',
+      reset: 'r',
+      preferred: 'g',
+      preferredSpeed: 2.0,
+      rewind: 'z',
+      forward: 'x',
+      toggleOsd: 'v'
+    }),
+    siteSpeeds: Object.freeze({})
+  });
+
+  function clampVideoSpeed(speed) {
+    const num = typeof speed === 'number' && Number.isFinite(speed) ? speed : DEFAULT_VIDEO_SPEED;
+    const clamped = Math.max(MIN_VIDEO_SPEED, Math.min(MAX_VIDEO_SPEED, num));
+    return Math.round(clamped * 100) / 100;
+  }
+
+  function formatVideoSpeed(speed) {
+    const clamped = clampVideoSpeed(speed);
+    return clamped.toFixed(2) + 'x';
+  }
+
+  function normalizeVideoSpeedSettings(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return { ...DEFAULT_VIDEO_SPEED_SETTINGS };
+    }
+    const enabled = raw.enabled === true;
+    const defaultSpeed = clampVideoSpeed(raw.defaultSpeed);
+    const speedStep = typeof raw.speedStep === 'number' && raw.speedStep > 0 && raw.speedStep <= 2 ? raw.speedStep : 0.1;
+    const bigSpeedStep = typeof raw.bigSpeedStep === 'number' && raw.bigSpeedStep > 0 && raw.bigSpeedStep <= 5 ? raw.bigSpeedStep : 0.5;
+    const fastForwardSpeed = clampVideoSpeed(raw.fastForwardSpeed || 3.0);
+    const rewindTime = typeof raw.rewindTime === 'number' && raw.rewindTime > 0 ? raw.rewindTime : 10;
+    const forwardTime = typeof raw.forwardTime === 'number' && raw.forwardTime > 0 ? raw.forwardTime : 10;
+    const showOsd = raw.showOsd !== false;
+    const speedLock = raw.speedLock !== false;
+
+    const rawShortcuts = raw.shortcuts && typeof raw.shortcuts === 'object' ? raw.shortcuts : {};
+    const shortcuts = {
+      decrease: typeof rawShortcuts.decrease === 'string' ? rawShortcuts.decrease : '[',
+      increase: typeof rawShortcuts.increase === 'string' ? rawShortcuts.increase : ']',
+      bigDecrease: typeof rawShortcuts.bigDecrease === 'string' ? rawShortcuts.bigDecrease : '{',
+      bigIncrease: typeof rawShortcuts.bigIncrease === 'string' ? rawShortcuts.bigIncrease : '}',
+      reset: typeof rawShortcuts.reset === 'string' ? rawShortcuts.reset : 'r',
+      preferred: typeof rawShortcuts.preferred === 'string' ? rawShortcuts.preferred : 'g',
+      preferredSpeed: clampVideoSpeed(rawShortcuts.preferredSpeed || 2.0),
+      rewind: typeof rawShortcuts.rewind === 'string' ? rawShortcuts.rewind : 'z',
+      forward: typeof rawShortcuts.forward === 'string' ? rawShortcuts.forward : 'x',
+      toggleOsd: typeof rawShortcuts.toggleOsd === 'string' ? rawShortcuts.toggleOsd : 'v'
+    };
+
+    const rawSiteSpeeds = raw.siteSpeeds && typeof raw.siteSpeeds === 'object' && !Array.isArray(raw.siteSpeeds) ? raw.siteSpeeds : {};
+    const siteSpeeds = {};
+    for (const host of Object.keys(rawSiteSpeeds)) {
+      if (typeof rawSiteSpeeds[host] === 'number') {
+        siteSpeeds[host] = clampVideoSpeed(rawSiteSpeeds[host]);
+      }
+    }
+
+    return {
+      enabled,
+      defaultSpeed,
+      speedStep,
+      bigSpeedStep,
+      fastForwardSpeed,
+      rewindTime,
+      forwardTime,
+      showOsd,
+      speedLock,
+      shortcuts,
+      siteSpeeds
+    };
+  }
+
+  function resolveVideoSpeed(hostname, videoSpeedSettings) {
+    const settings = normalizeVideoSpeedSettings(videoSpeedSettings);
+    if (!settings.enabled) {
+      return 1.0;
+    }
+    if (hostname && settings.siteSpeeds && typeof settings.siteSpeeds[hostname] === 'number') {
+      return clampVideoSpeed(settings.siteSpeeds[hostname]);
+    }
+    return clampVideoSpeed(settings.defaultSpeed);
+  }
+
   function normalizeDomainSettings(domainSettings) {
     const out = Object.create(null);
     if (!isPlainObject(domainSettings)) {
@@ -250,7 +351,15 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     OCR_LANGUAGE_LABELS,
     normalizeOcrLanguage,
     ocrLanguageToList,
-    ocrLanguagesToSetting
+    ocrLanguagesToSetting,
+    MIN_VIDEO_SPEED,
+    MAX_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED_SETTINGS,
+    clampVideoSpeed,
+    formatVideoSpeed,
+    normalizeVideoSpeedSettings,
+    resolveVideoSpeed
   });
 })();
 
@@ -265,7 +374,15 @@ if (typeof module !== 'undefined' && module.exports) {
     DEFAULT_OCR_LANGUAGE: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_OCR_LANGUAGE,
     normalizeOcrLanguage: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeOcrLanguage,
     ocrLanguageToList: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.ocrLanguageToList,
-    ocrLanguagesToSetting: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.ocrLanguagesToSetting
+    ocrLanguagesToSetting: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.ocrLanguagesToSetting,
+    MIN_VIDEO_SPEED: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.MIN_VIDEO_SPEED,
+    MAX_VIDEO_SPEED: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.MAX_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED_SETTINGS: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.DEFAULT_VIDEO_SPEED_SETTINGS,
+    clampVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.clampVideoSpeed,
+    formatVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.formatVideoSpeed,
+    normalizeVideoSpeedSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeVideoSpeedSettings,
+    resolveVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.resolveVideoSpeed
   });
 } else {
 (function sharedInit(SETTINGS_UTILS) {
@@ -300,7 +417,15 @@ if (typeof module !== 'undefined' && module.exports) {
     OCR_LANGUAGE_LABELS,
     normalizeOcrLanguage,
     ocrLanguageToList,
-    ocrLanguagesToSetting
+    ocrLanguagesToSetting,
+    MIN_VIDEO_SPEED,
+    MAX_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED_SETTINGS,
+    clampVideoSpeed,
+    formatVideoSpeed,
+    normalizeVideoSpeedSettings,
+    resolveVideoSpeed
   } = SETTINGS_UTILS;
 
   // Public suffix blocklist — minimal subset of common multi-part TLDs.
@@ -342,7 +467,8 @@ const STORAGE_DEFAULTS = Object.freeze({
     enabled: true,
     domainSettings: Object.freeze({}),
     theme: 'dark',
-    ocrLanguage: 'kor+eng'
+    ocrLanguage: 'kor+eng',
+    videoSpeedSettings: DEFAULT_VIDEO_SPEED_SETTINGS
   });
 
   // ---- v0.5.0: Lite/Ultimate mode schema ----
@@ -754,7 +880,15 @@ const STORAGE_DEFAULTS = Object.freeze({
     OCR_LANGUAGE_LABELS,
     normalizeOcrLanguage,
     ocrLanguageToList,
-    ocrLanguagesToSetting
+    ocrLanguagesToSetting,
+    MIN_VIDEO_SPEED,
+    MAX_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED,
+    DEFAULT_VIDEO_SPEED_SETTINGS,
+    clampVideoSpeed,
+    formatVideoSpeed,
+    normalizeVideoSpeedSettings,
+    resolveVideoSpeed
   };
 
   if (typeof globalThis !== 'undefined') {

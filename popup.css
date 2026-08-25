@@ -1002,6 +1002,129 @@ h1 {
   display: none;
 }
 
+/* ---- Video Speed Controller Popup Card ---- */
+
+.video-speed-card {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--rosso-corsa);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.video-speed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.video-speed-badge {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  background: rgba(200, 164, 93, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 164, 93, 0.3);
+}
+
+.video-speed-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.video-speed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.video-speed-btn:hover {
+  background: var(--rosso-corsa);
+  border-color: var(--rosso-corsa);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.video-speed-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+}
+
+.video-speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--rosso-corsa);
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.video-speed-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.video-speed-presets {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.video-speed-chip {
+  padding: 4px 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  text-align: center;
+}
+
+.video-speed-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.video-speed-chip.is-active {
+  background: var(--rosso-corsa);
+  border-color: var(--rosso-corsa);
+  color: #ffffff;
+}
+
+.video-speed-hint {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.3;
+  margin: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .toggle-button,
   .session-button,
@@ -1009,12 +1132,15 @@ h1 {
   .mode-button,
   .preset-button,
   .theme-button,
-  .ocr-button {
+  .ocr-button,
+  .video-speed-btn,
+  .video-speed-chip {
     transition: none;
   }
 
   .toggle-button:hover,
-  .ocr-button:hover {
+  .ocr-button:hover,
+  .video-speed-btn:hover {
     transform: none;
   }
 }

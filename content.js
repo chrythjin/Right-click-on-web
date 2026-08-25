@@ -879,6 +879,11 @@ function setEnabled(nextEnabled, nextProfile) {
   if (enabled && !isActive) {
     enableUnlocker();
   }
+
+  globalThis.__rightClickOnWebEffectiveEnabled = enabled;
+  if (typeof globalThis.__rightClickOnWebSetVideoControllerEnabled === 'function') {
+    globalThis.__rightClickOnWebSetVideoControllerEnabled(enabled);
+  }
 }
 
 // ---------------------------------------------------------------------------

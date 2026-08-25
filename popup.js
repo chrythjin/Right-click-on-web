@@ -44,8 +44,45 @@ const state = {
   syncAvailable: false,
   syncBytesInUse: 0,
   lastWriteFallback: false,
-  theme: SHARED.DEFAULT_THEME
+  theme: SHARED.DEFAULT_THEME,
+  videoSpeedSettings: { ...SHARED.DEFAULT_VIDEO_SPEED_SETTINGS },
+  currentVideoSpeed: 1.0
 };
+
+let videoSpeedPersistTimer = null;
+let videoSpeedPersistTail = Promise.resolve();
+
+function persistVideoSpeedSettings() {
+  if (videoSpeedPersistTimer) {
+    clearTimeout(videoSpeedPersistTimer);
+    videoSpeedPersistTimer = null;
+  }
+  if (!state.videoSpeedSettings.enabled || !state.hostname) {
+    return Promise.resolve(null);
+  }
+  const speedSnapshot = SHARED.clampVideoSpeed(state.currentVideoSpeed);
+  const writeOperation = videoSpeedPersistTail
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'rcow:updateVideoSpeedSettings',
+          payload: { hostname: state.hostname, speed: speedSnapshot }
+        });
+        if (!response?.ok) {
+          throw new Error(response?.error || '동영상 배속 저장에 실패했습니다.');
+        }
+        state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(response.settings);
+        state.lastWriteFallback = Boolean(response.fallback);
+        return response;
+      } catch (err) {
+        console.error('[Right-click on Web] failed to persist video speed', err);
+        return null;
+      }
+    });
+  videoSpeedPersistTail = writeOperation;
+  return writeOperation;
+}
 
 const elements = {
   toggleButton: document.getElementById('toggleButton'),
@@ -68,6 +105,10 @@ const elements = {
   effectiveSource: document.getElementById('effectiveSource'),
   featureImpactCard: document.getElementById('featureImpactCard'),
   featureImpactContent: document.getElementById('featureImpactContent'),
+  videoSpeedDisplay: document.getElementById('videoSpeedDisplay'),
+  videoSpeedDec: document.getElementById('videoSpeedDec'),
+  videoSpeedInc: document.getElementById('videoSpeedInc'),
+  videoSpeedSlider: document.getElementById('videoSpeedSlider'),
   themeDark: document.getElementById('themeDark'),
   themeNeon: document.getElementById('themeNeon'),
   themeLight: document.getElementById('themeLight'),
@@ -181,6 +222,8 @@ async function loadState() {
       ? SHARED.parseDomainSetting({ enabled: true, preset: SHARED.DEFAULT_PRESET, mode: SHARED.MODE_ULTIMATE })
       : SHARED.parseDomainSetting({ enabled: state.globalEnabled, preset: SHARED.DEFAULT_PRESET, mode: state.effectiveMode }));
   state.features = parsedDomainSetting.features;
+  state.videoSpeedSettings = SHARED.normalizeVideoSpeedSettings(merged.videoSpeedSettings);
+  state.currentVideoSpeed = SHARED.resolveVideoSpeed(state.hostname, state.videoSpeedSettings);
 
   // Sync usage probe — best effort. syncAvailable is set true when
   // getBytesInUse returns a non-zero value; a successful write is
@@ -360,6 +403,9 @@ function render() {
     elements.featureImpactCard.classList.add('is-hidden');
   }
 
+  // ---- Video speed control UI ----
+  renderVideoSpeed();
+
   // ---- Session button ----
   elements.sessionButton.disabled = !state.sessionAvailable;
   elements.sessionButton.classList.toggle('is-active', state.sessionActive);
@@ -494,6 +540,47 @@ function renderFeatureImpact(features, mode, presetState, effectiveEnabled = tru
     content.appendChild(row);
   }
   card.classList.remove('is-hidden');
+}
+
+function renderVideoSpeed() {
+  if (!elements.videoSpeedDisplay || !elements.videoSpeedSlider) return;
+  const speed = state.currentVideoSpeed || 1.0;
+  const enabled = Boolean(state.videoSpeedSettings.enabled && state.hostname);
+  elements.videoSpeedDisplay.textContent = SHARED.formatVideoSpeed(speed);
+  elements.videoSpeedSlider.value = String(speed);
+  elements.videoSpeedSlider.disabled = !enabled;
+  elements.videoSpeedDec.disabled = !enabled;
+  elements.videoSpeedInc.disabled = !enabled;
+  const chips = document.querySelectorAll('.video-speed-chip');
+  for (const chip of chips) {
+    const chipSpeed = Number(chip.getAttribute('data-speed'));
+    chip.classList.toggle('is-active', Math.abs(chipSpeed - speed) < 0.01);
+    chip.disabled = !enabled;
+  }
+}
+
+function handleVideoSpeedChange(nextSpeed, persistImmediately = false) {
+  if (!state.videoSpeedSettings.enabled || !state.hostname) return;
+  const speed = SHARED.clampVideoSpeed(nextSpeed);
+  state.currentVideoSpeed = speed;
+  renderVideoSpeed();
+
+  const nextSiteSpeeds = { ...(state.videoSpeedSettings.siteSpeeds || {}) };
+  if (state.hostname) {
+    nextSiteSpeeds[state.hostname] = speed;
+  }
+  const updatedSettings = {
+    ...state.videoSpeedSettings,
+    siteSpeeds: nextSiteSpeeds
+  };
+  state.videoSpeedSettings = updatedSettings;
+
+  if (persistImmediately) {
+    persistVideoSpeedSettings();
+    return;
+  }
+  if (videoSpeedPersistTimer) clearTimeout(videoSpeedPersistTimer);
+  videoSpeedPersistTimer = setTimeout(persistVideoSpeedSettings, 300);
 }
 
 function renderQuickRecovery() {
@@ -1243,6 +1330,41 @@ elements.modeUltimate.addEventListener('click', () => handleModeSelect(SHARED.MO
 elements.presetSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_SAFE));
 elements.presetComplete.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_COMPLETE));
 elements.presetUploadSafe.addEventListener('click', () => handlePresetSelect(SHARED.PRESET_UPLOAD_SAFE));
+if (elements.videoSpeedDec) {
+  elements.videoSpeedDec.addEventListener('click', () => {
+    handleVideoSpeedChange((state.currentVideoSpeed || 1.0) - (state.videoSpeedSettings.speedStep || 0.1), true);
+  });
+}
+if (elements.videoSpeedInc) {
+  elements.videoSpeedInc.addEventListener('click', () => {
+    handleVideoSpeedChange((state.currentVideoSpeed || 1.0) + (state.videoSpeedSettings.speedStep || 0.1), true);
+  });
+}
+if (elements.videoSpeedSlider) {
+  elements.videoSpeedSlider.addEventListener('input', (e) => {
+    const val = Number(e.target.value);
+    if (Number.isFinite(val)) {
+      handleVideoSpeedChange(val);
+    }
+  });
+  elements.videoSpeedSlider.addEventListener('change', () => {
+    persistVideoSpeedSettings();
+  });
+}
+const videoSpeedChips = document.querySelectorAll('.video-speed-chip');
+for (const chip of videoSpeedChips) {
+  chip.addEventListener('click', () => {
+    const speed = Number(chip.getAttribute('data-speed'));
+    if (Number.isFinite(speed)) {
+      handleVideoSpeedChange(speed, true);
+    }
+  });
+}
+
+window.addEventListener('pagehide', () => {
+  if (videoSpeedPersistTimer) persistVideoSpeedSettings();
+});
+
 if (elements.themeDark) {
   elements.themeDark.addEventListener('click', () => handleThemeSelect(SHARED.THEME_DARK));
 }
@@ -1373,7 +1495,7 @@ function reloadState() {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   let needsReload = false;
   if (areaName === 'local' || areaName === 'sync') {
-    if (changes.enabled || changes.domainSettings || changes.theme) {
+    if (changes.enabled || changes.domainSettings || changes.theme || changes.videoSpeedSettings) {
       needsReload = true;
     }
   } else if (areaName === 'session') {

@@ -1784,6 +1784,125 @@ body {
   background: rgba(225, 6, 0, 0.2);
 }
 
+/* ---- Video Speed Settings Section ---- */
+
+.video-speed-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+  margin-bottom: 20px;
+}
+
+.video-speed-option-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.video-speed-option-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.video-speed-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-speed-num-input {
+  width: 90px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  outline: none;
+}
+
+.video-speed-num-input:focus {
+  border-color: var(--rosso-corsa);
+}
+
+.video-speed-unit {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.video-speed-select {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 25, 0.8);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.video-speed-select:focus {
+  border-color: var(--rosso-corsa);
+}
+
+.video-speed-option-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+.video-speed-shortcut-guide {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.video-speed-shortcut-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--gold);
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.video-speed-shortcut-table {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 16px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.shortcut-item kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  text-align: center;
+}
+
 @media (min-width: 900px) {
   .options-shell {
     max-width: min(860px, 98vw);

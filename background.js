@@ -34,6 +34,7 @@ const CONTEXT_MENU_IDS = Object.freeze({
 let creatingOffscreenPromise = null;
 let ocrSessionWritePromise = Promise.resolve();
 let ocrHistoryWritePromise = Promise.resolve();
+let videoSpeedSettingsWritePromise = Promise.resolve();
 let latestOcrRequestId = 0;
 let activeOcrRequestId = 0;
 const cancelledOcrRequestIds = new Set();
@@ -168,6 +169,81 @@ function enqueueOcrHistoryMutation(operation) {
   const result = ocrHistoryWritePromise.catch(() => {}).then(operation);
   ocrHistoryWritePromise = result.catch(() => {});
   return result;
+}
+
+function enqueueVideoSpeedSettingsMutation(operation) {
+  const result = videoSpeedSettingsWritePromise.catch(() => {}).then(operation);
+  videoSpeedSettingsWritePromise = result.catch(() => {});
+  return result;
+}
+
+const VIDEO_SPEED_PATCH_FIELDS = new Set([
+  'enabled',
+  'defaultSpeed',
+  'speedStep',
+  'showOsd',
+  'speedLock'
+]);
+
+function validateVideoSpeedSettingsPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new TypeError('동영상 배속 설정 요청이 올바르지 않습니다.');
+  }
+
+  const hasPatch = Object.hasOwn(payload, 'patch');
+  const hasSiteSpeed = Object.hasOwn(payload, 'hostname') || Object.hasOwn(payload, 'speed');
+  if (hasPatch === hasSiteSpeed) {
+    throw new TypeError('동영상 배속 설정 요청은 설정 패치 또는 사이트 배속 중 하나여야 합니다.');
+  }
+
+  if (hasPatch) {
+    if (!payload.patch || typeof payload.patch !== 'object' || Array.isArray(payload.patch)) {
+      throw new TypeError('동영상 배속 설정 패치가 올바르지 않습니다.');
+    }
+    const fields = Object.keys(payload.patch);
+    if (fields.length === 0 || fields.some((field) => !VIDEO_SPEED_PATCH_FIELDS.has(field))) {
+      throw new TypeError('허용되지 않은 동영상 배속 설정 필드입니다.');
+    }
+    return { patch: payload.patch };
+  }
+
+  const hostname = typeof payload.hostname === 'string' ? payload.hostname.trim().toLowerCase() : '';
+  const validationUrl = ['https:', '', hostname, ''].join('/');
+  if (!hostname || hostname.length > 253 || SHARED.getHostname(validationUrl) !== hostname) {
+    throw new TypeError('사이트 호스트 이름이 올바르지 않습니다.');
+  }
+  if (typeof payload.speed !== 'number' || !Number.isFinite(payload.speed)) {
+    throw new TypeError('사이트 배속 값이 올바르지 않습니다.');
+  }
+  return { hostname, speed: payload.speed };
+}
+
+function updateVideoSpeedSettings(payload) {
+  let validatedPayload;
+  try {
+    validatedPayload = validateVideoSpeedSettingsPayload(payload);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  return enqueueVideoSpeedSettingsMutation(async () => {
+    const settings = await SHARED.resolveSettings(DEFAULT_SETTINGS);
+    const current = SHARED.normalizeVideoSpeedSettings(settings.videoSpeedSettings);
+    const patch = validatedPayload.patch || {};
+    const next = SHARED.normalizeVideoSpeedSettings({ ...current, ...patch });
+
+    if (validatedPayload.hostname) {
+      next.siteSpeeds = {
+        ...(current.siteSpeeds || {}),
+        [validatedPayload.hostname]: SHARED.clampVideoSpeed(validatedPayload.speed)
+      };
+    }
+
+    const writeResult = await SHARED.safeSyncSet(
+      { videoSpeedSettings: next },
+      chrome.storage.local
+    );
+    return { ok: true, settings: next, fallback: Boolean(writeResult?.fallback) };
+  });
 }
 
 function saveOcrHistoryEntry(payload) {
@@ -802,6 +878,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         openOptionsFallback();
         sendResponse({ ok: false, reason: 'error' });
       }
+    );
+    return true;
+  }
+  if (message.type === 'rcow:updateVideoSpeedSettings') {
+    updateVideoSpeedSettings(message.payload).then(
+      sendResponse,
+      (error) => sendResponse({ ok: false, error: error.message || String(error) })
     );
     return true;
   }
