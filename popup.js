@@ -39,6 +39,7 @@ const state = {
   // snapshot when no entry exists. Session overrides enabled only;
   // the profile always comes from the matched domain or the default.
   effectivePreset: SHARED.PRESET_COMPLETE,
+  features: null,
   enabledSource: 'global',
   syncAvailable: false,
   syncBytesInUse: 0,
@@ -170,6 +171,16 @@ async function loadState() {
   const presetState = computePresetState(state, SHARED);
   state.effectivePreset = presetState.displayPreset;
   state.enabledSource = presetState.source;
+
+  const matchedEntry = state.matchedKey && state.domainSettings
+    ? state.domainSettings[state.matchedKey]
+    : null;
+  const parsedDomainSetting = matchedEntry !== null && matchedEntry !== undefined
+    ? SHARED.parseDomainSetting(matchedEntry)
+    : (state.sessionActive
+      ? SHARED.parseDomainSetting({ enabled: true, preset: SHARED.DEFAULT_PRESET, mode: SHARED.MODE_ULTIMATE })
+      : SHARED.parseDomainSetting({ enabled: state.globalEnabled, preset: SHARED.DEFAULT_PRESET, mode: state.effectiveMode }));
+  state.features = parsedDomainSetting.features;
 
   // Sync usage probe — best effort. syncAvailable is set true when
   // getBytesInUse returns a non-zero value; a successful write is
@@ -344,7 +355,7 @@ function render() {
   // ---- Quick recovery UI (v0.10.2 task 4) ----
   renderQuickRecovery();
   if (state.hostname) {
-    renderFeatureImpact(state.features, state.effectiveMode, presetState);
+    renderFeatureImpact(state.features, state.effectiveMode, presetState, state.effectiveEnabled);
   } else if (elements.featureImpactCard) {
     elements.featureImpactCard.classList.add('is-hidden');
   }
@@ -444,14 +455,16 @@ const RECOVERY_FEATURE_ROWS = [
   { key: 'ultimateCss',  label: 'CSS 블록 지정 강제 허용' }
 ];
 
-function computeFeatureImpact(features, mode, presetState) {
+function computeFeatureImpact(features, mode, presetState, effectiveEnabled = true) {
   const isLite = mode === SHARED.MODE_LITE;
   const isSafe = presetState.displayPreset === SHARED.PRESET_SAFE;
   const isUploadSafe = presetState.displayPreset === SHARED.PRESET_UPLOAD_SAFE;
   const rows = [];
   for (const { key, label } of RECOVERY_FEATURE_ROWS) {
     let active = false;
-    if (key === 'ultimateCss') {
+    if (!effectiveEnabled) {
+      active = false;
+    } else if (key === 'ultimateCss') {
       active = !isLite && Boolean(features);
     } else if (key === 'dragStart' || key === 'dragDrop') {
       active = (isSafe || isUploadSafe) ? false : Boolean(features && features[key]);
@@ -467,12 +480,12 @@ function computeFeatureImpact(features, mode, presetState) {
   return rows;
 }
 
-function renderFeatureImpact(features, mode, presetState) {
+function renderFeatureImpact(features, mode, presetState, effectiveEnabled = true) {
   const card = elements.featureImpactCard;
   const content = elements.featureImpactContent;
   if (!card || !content) return;
 
-  const rows = computeFeatureImpact(features, mode, presetState);
+  const rows = computeFeatureImpact(features, mode, presetState, effectiveEnabled);
   content.innerHTML = '';
   for (const { label, active } of rows) {
     const row = document.createElement('div');
