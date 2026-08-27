@@ -131,3 +131,10 @@
   background: rgba(225, 6, 0, 0.2);
   color: #ff9988;
 }
+
+@media print {
+  .rcow-video-osd {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}

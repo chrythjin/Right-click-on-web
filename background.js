@@ -232,6 +232,7 @@ function updateVideoSpeedSettings(payload) {
     const next = SHARED.normalizeVideoSpeedSettings({ ...current, ...patch });
 
     if (validatedPayload.hostname) {
+      next.enabled = true;
       next.siteSpeeds = {
         ...(current.siteSpeeds || {}),
         [validatedPayload.hostname]: SHARED.clampVideoSpeed(validatedPayload.speed)

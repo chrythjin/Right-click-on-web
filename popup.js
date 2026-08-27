@@ -57,7 +57,7 @@ function persistVideoSpeedSettings() {
     clearTimeout(videoSpeedPersistTimer);
     videoSpeedPersistTimer = null;
   }
-  if (!state.videoSpeedSettings.enabled || !state.hostname) {
+  if (!state.hostname) {
     return Promise.resolve(null);
   }
   const speedSnapshot = SHARED.clampVideoSpeed(state.currentVideoSpeed);
@@ -545,7 +545,7 @@ function renderFeatureImpact(features, mode, presetState, effectiveEnabled = tru
 function renderVideoSpeed() {
   if (!elements.videoSpeedDisplay || !elements.videoSpeedSlider) return;
   const speed = state.currentVideoSpeed || 1.0;
-  const enabled = Boolean(state.videoSpeedSettings.enabled && state.hostname);
+  const enabled = Boolean(state.hostname);
   elements.videoSpeedDisplay.textContent = SHARED.formatVideoSpeed(speed);
   elements.videoSpeedSlider.value = String(speed);
   elements.videoSpeedSlider.disabled = !enabled;
@@ -560,20 +560,19 @@ function renderVideoSpeed() {
 }
 
 function handleVideoSpeedChange(nextSpeed, persistImmediately = false) {
-  if (!state.videoSpeedSettings.enabled || !state.hostname) return;
+  if (!state.hostname) return;
   const speed = SHARED.clampVideoSpeed(nextSpeed);
   state.currentVideoSpeed = speed;
-  renderVideoSpeed();
 
   const nextSiteSpeeds = { ...(state.videoSpeedSettings.siteSpeeds || {}) };
-  if (state.hostname) {
-    nextSiteSpeeds[state.hostname] = speed;
-  }
+  nextSiteSpeeds[state.hostname] = speed;
   const updatedSettings = {
     ...state.videoSpeedSettings,
+    enabled: true,
     siteSpeeds: nextSiteSpeeds
   };
   state.videoSpeedSettings = updatedSettings;
+  renderVideoSpeed();
 
   if (persistImmediately) {
     persistVideoSpeedSettings();

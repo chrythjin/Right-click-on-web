@@ -300,7 +300,7 @@ function buildUnlockerCss(features = currentFeatures) {
   if (features.printUnhide) {
     rules.push(`
       @media print {
-        body * {
+        body *:not([data-rcow-injected]):not([id^="right-click-on-web"]):not(.rcow-video-osd):not(.rcow-video-osd *):not(.rcow-crop-overlay):not(.rcow-crop-overlay *):not(.rcow-toast-container):not(.rcow-toast-container *) {
           display: revert !important;
           visibility: visible !important;
         }

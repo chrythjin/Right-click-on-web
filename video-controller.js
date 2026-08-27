@@ -53,11 +53,12 @@
   }
 
   function saveCurrentSpeed(speed) {
-    if (!currentSettings.enabled || !hostname) return;
+    if (!hostname) return;
     const nextSiteSpeeds = { ...(currentSettings.siteSpeeds || {}) };
     nextSiteSpeeds[hostname] = SHARED.clampVideoSpeed(speed);
     const updatedSettings = {
       ...currentSettings,
+      enabled: true,
       siteSpeeds: nextSiteSpeeds
     };
     currentSettings = updatedSettings;
@@ -569,6 +570,7 @@
   }
 
   loadVideoSettings().then(() => {
+    effectiveEnabled = globalThis.__rightClickOnWebEffectiveEnabled === true;
     if (effectiveEnabled && currentSettings.enabled) {
       activateController();
     }
