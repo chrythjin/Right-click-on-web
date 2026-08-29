@@ -219,9 +219,16 @@
     updateOsdForVideo(media);
   }
 
+  function updateCurrentSpeed(speed, save) {
+    currentSpeed = SHARED.clampVideoSpeed(speed);
+    if (save) {
+      saveCurrentSpeed(currentSpeed);
+    }
+  }
+
   function applySpeedToAllMedia(speed, save = true) {
     if (!effectiveEnabled || !currentSettings.enabled) return;
-    currentSpeed = SHARED.clampVideoSpeed(speed);
+    updateCurrentSpeed(speed, save);
     for (const media of trackedMediaSet) {
       if (document.contains(media) || (media.getRootNode && media.getRootNode() instanceof ShadowRoot)) {
         applySpeedToElement(media, currentSpeed);
@@ -229,20 +236,13 @@
         untrackMediaElement(media);
       }
     }
-
-    if (save) {
-      saveCurrentSpeed(currentSpeed);
-    }
   }
 
   function applySpeedToMedia(mediaList, speed, save = true) {
     if (!effectiveEnabled || !currentSettings.enabled || mediaList.length === 0) return;
-    currentSpeed = SHARED.clampVideoSpeed(speed);
+    updateCurrentSpeed(speed, save);
     for (const media of mediaList) {
       applySpeedToElement(media, currentSpeed);
-    }
-    if (save) {
-      saveCurrentSpeed(currentSpeed);
     }
   }
 
