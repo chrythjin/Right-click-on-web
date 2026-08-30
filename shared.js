@@ -311,6 +311,13 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     return clampVideoSpeed(settings.defaultSpeed);
   }
 
+  function classifyVideoRateChange(lockedSpeed, observedSpeed, interactionActive) {
+    const locked = clampVideoSpeed(lockedSpeed);
+    const observed = clampVideoSpeed(observedSpeed);
+    if (Math.abs(observed - locked) <= 0.01) return 'matched';
+    return interactionActive === true ? 'user' : 'site';
+  }
+
   function normalizeDomainSettings(domainSettings) {
     const out = Object.create(null);
     if (!isPlainObject(domainSettings)) {
@@ -359,7 +366,8 @@ const RIGHT_CLICK_ON_WEB_SETTINGS_UTILS = (() => {
     clampVideoSpeed,
     formatVideoSpeed,
     normalizeVideoSpeedSettings,
-    resolveVideoSpeed
+    resolveVideoSpeed,
+    classifyVideoRateChange
   });
 })();
 
@@ -382,7 +390,8 @@ if (typeof module !== 'undefined' && module.exports) {
     clampVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.clampVideoSpeed,
     formatVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.formatVideoSpeed,
     normalizeVideoSpeedSettings: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.normalizeVideoSpeedSettings,
-    resolveVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.resolveVideoSpeed
+    resolveVideoSpeed: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.resolveVideoSpeed,
+    classifyVideoRateChange: RIGHT_CLICK_ON_WEB_SETTINGS_UTILS.classifyVideoRateChange
   });
 } else {
 (function sharedInit(SETTINGS_UTILS) {
@@ -425,7 +434,8 @@ if (typeof module !== 'undefined' && module.exports) {
     clampVideoSpeed,
     formatVideoSpeed,
     normalizeVideoSpeedSettings,
-    resolveVideoSpeed
+    resolveVideoSpeed,
+    classifyVideoRateChange
   } = SETTINGS_UTILS;
 
   // Public suffix blocklist — minimal subset of common multi-part TLDs.
@@ -888,7 +898,8 @@ const STORAGE_DEFAULTS = Object.freeze({
     clampVideoSpeed,
     formatVideoSpeed,
     normalizeVideoSpeedSettings,
-    resolveVideoSpeed
+    resolveVideoSpeed,
+    classifyVideoRateChange
   };
 
   if (typeof globalThis !== 'undefined') {

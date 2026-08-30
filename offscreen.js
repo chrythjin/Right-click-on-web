@@ -10,7 +10,8 @@
        typeof OCR_IMAGE_UTILS.calculateCropBounds !== 'function' ||
          typeof OCR_IMAGE_UTILS.createOcrSuccessResponse !== 'function' ||
           typeof OCR_IMAGE_UTILS.createPreprocessingPlan !== 'function' ||
-          typeof OCR_IMAGE_UTILS.recognizeWithCandidates !== 'function' ||
+         typeof OCR_IMAGE_UTILS.recognizeWithCandidates !== 'function' ||
+          typeof OCR_IMAGE_UTILS.resolvePageSegmentationRetry !== 'function' ||
           typeof OCR_IMAGE_UTILS.normalizePreprocessing !== 'function' ||
           typeof OCR_IMAGE_UTILS.transformImageData !== 'function' ||
           typeof OCR_IMAGE_UTILS.summarizeOcrDetail !== 'function') {
@@ -45,7 +46,11 @@
         if (pendingRequests.size !== 0 || !workerPromise) return;
         const worker = await workerPromise;
         workerPromise = null;
-        await worker.terminate();
+        try {
+          await worker.terminate();
+        } finally {
+          void chrome.runtime.sendMessage({ type: 'rcow:offscreenIdle' }).catch(() => {});
+        }
       });
     }, WORKER_IDLE_TIMEOUT_MS);
   }
@@ -266,23 +271,42 @@
           croppedImage.pixels
         );
         const attempts = [];
-        const recognize = async (candidate) => {
+        const recognize = async (candidate, pageSegmentationMode = OCR_IMAGE_UTILS.DEFAULT_PAGE_SEGMENTATION_MODE) => {
           const attemptStartedAt = performance.now();
+          await worker.setParameters({ tessedit_pageseg_mode: pageSegmentationMode });
           const { data } = await worker.recognize(createCandidateDataUrl(croppedImage, candidate));
           attempts.push({
             profile: candidate.profile,
+            pageSegmentationMode,
             confidence: OCR_IMAGE_UTILS.summarizeOcrConfidence(data?.words).average,
             timingMs: performance.now() - attemptStartedAt
           });
           return data;
         };
-        const recognition = useRequestedPreprocessing === true &&
+        const pageSegmentationRetry = OCR_IMAGE_UTILS.resolvePageSegmentationRetry(
+          croppedImage.crop.width,
+          croppedImage.crop.height
+        );
+        let recognition = useRequestedPreprocessing === true &&
           OCR_IMAGE_UTILS.PREPROCESSING_PROFILES.includes(preprocessingProfile)
           ? {
               data: await recognize(OCR_IMAGE_UTILS.normalizePreprocessing({ profile: preprocessingProfile })),
               preprocessing: OCR_IMAGE_UTILS.normalizePreprocessing({ profile: preprocessingProfile })
             }
-          : await OCR_IMAGE_UTILS.recognizeWithCandidates(recognize, plan.initial, plan.alternate);
+          : await OCR_IMAGE_UTILS.recognizeWithCandidates(
+              recognize,
+              plan.initial,
+              pageSegmentationRetry ? plan.alternate.slice(0, 1) : plan.alternate
+            );
+        if (pageSegmentationRetry && OCR_IMAGE_UTILS.shouldRetryRecognition(
+          OCR_IMAGE_UTILS.summarizeOcrConfidence(recognition.data?.words)
+        )) {
+          const retryData = await recognize(recognition.preprocessing, pageSegmentationRetry);
+          const retryChoice = OCR_IMAGE_UTILS.chooseRecognitionResult(recognition.data, retryData);
+          if (retryChoice.attempt === 2) {
+            recognition = { ...recognition, data: retryChoice.data, pageSegmentationMode: pageSegmentationRetry };
+          }
+        }
 
         if (!pendingRequests.has(requestId)) return;
         respondOnce(requestId, { ...OCR_IMAGE_UTILS.createOcrSuccessResponse(
@@ -290,7 +314,9 @@
           croppedImage.crop,
           performance.now() - startedAt,
           recognition.preprocessing
-        ), attempts, detail: OCR_IMAGE_UTILS.summarizeOcrDetail(recognition.data, croppedImage.crop) });
+        ), attempts, pageSegmentationMode: recognition.pageSegmentationMode ||
+          OCR_IMAGE_UTILS.DEFAULT_PAGE_SEGMENTATION_MODE,
+        detail: OCR_IMAGE_UTILS.summarizeOcrDetail(recognition.data, croppedImage.crop) });
       } catch (err) {
         console.error('Offscreen OCR error:', err);
         respondOnce(requestId, { ok: false, error: err.message || String(err) });

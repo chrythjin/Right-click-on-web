@@ -32,11 +32,14 @@ const CONTEXT_MENU_IDS = Object.freeze({
 });
 
 let creatingOffscreenPromise = null;
+let closingOffscreenPromise = null;
+let idleOffscreenCloseRequested = false;
 let ocrSessionWritePromise = Promise.resolve();
 let ocrHistoryWritePromise = Promise.resolve();
 let videoSpeedSettingsWritePromise = Promise.resolve();
 let latestOcrRequestId = 0;
 let activeOcrRequestId = 0;
+const activeOcrRequests = new Set();
 const cancelledOcrRequestIds = new Set();
 const toolbarUpdateVersions = new Map();
 const toolbarUpdatePromises = new Map();
@@ -104,6 +107,9 @@ async function ensureOffscreenDocument() {
   if (typeof chrome.offscreen === 'undefined') {
     throw new Error('이 브라우저는 chrome.offscreen API를 지원하지 않습니다.');
   }
+  if (closingOffscreenPromise) {
+    await closingOffscreenPromise;
+  }
   if (typeof chrome.offscreen.hasDocument === 'function') {
     const hasDoc = await chrome.offscreen.hasDocument();
     if (hasDoc) {
@@ -131,6 +137,27 @@ async function ensureOffscreenDocument() {
     creatingOffscreenPromise = null;
   });
   await creatingOffscreenPromise;
+}
+
+async function closeIdleOffscreenDocument() {
+  if (typeof chrome.offscreen?.closeDocument !== 'function') {
+    return false;
+  }
+  if (activeOcrRequests.size > 0 || creatingOffscreenPromise) {
+    idleOffscreenCloseRequested = true;
+    return false;
+  }
+  if (closingOffscreenPromise) {
+    return closingOffscreenPromise;
+  }
+  idleOffscreenCloseRequested = false;
+  closingOffscreenPromise = chrome.offscreen.closeDocument().then(
+    () => true,
+    () => false
+  ).finally(() => {
+    closingOffscreenPromise = null;
+  });
+  return closingOffscreenPromise;
 }
 
 async function triggerCropOnActiveTab() {
@@ -453,10 +480,13 @@ async function rememberHostOcrProfile(hostname, profile) {
 }
 
 async function captureAndOcr(tab, request) {
-  const requestId = await allocateOcrRequestId();
-  activeOcrRequestId = requestId;
+  const activityToken = {};
+  activeOcrRequests.add(activityToken);
+  let requestId = 0;
   const source = OCR_SESSION.normalizeOcrSource(request?.source);
   try {
+    requestId = await allocateOcrRequestId();
+    activeOcrRequestId = requestId;
     let captureTab = tab;
     let preprocessingProfile = request?.preprocessingProfile;
     let useRequestedPreprocessing = request?.useRequestedPreprocessing === true;
@@ -554,7 +584,11 @@ async function captureAndOcr(tab, request) {
     throw error;
   } finally {
     cancelledOcrRequestIds.delete(requestId);
+    activeOcrRequests.delete(activityToken);
     if (activeOcrRequestId === requestId) activeOcrRequestId = 0;
+    if (activeOcrRequests.size === 0 && idleOffscreenCloseRequested) {
+      void closeIdleOffscreenDocument();
+    }
   }
 }
 
@@ -925,6 +959,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     sendResponse({ ok: true, requestId: message.requestId });
     return;
+  }
+  if (message.type === 'rcow:offscreenIdle') {
+    closeIdleOffscreenDocument().then((closed) => sendResponse({ ok: true, closed }));
+    return true;
   }
   if (message.type === 'rcow:cancelOcr' && message.target !== 'offscreen') {
     const requestId = activeOcrRequestId;

@@ -30,9 +30,15 @@
   const trackedMediaSet = new Set();
   const mediaOsdMap = new Map();
   const mediaControllerMap = new Map();
+  const mediaRateIntentMap = new Map();
   let mediaPollTimer = null;
   let runtimeActive = false;
   let mediaObserver = null;
+  const USER_RATE_COMMIT_DELAY_MS = 120;
+  const TRANSIENT_RATE_HOLD_MS = 600;
+  const USER_RATE_INTENT_TIMEOUT_MS = 10000;
+  const SITE_RATE_RESTORE_DELAY_MS = 80;
+  const OSD_LIFETIME_MS = 1200;
 
   // ---------------------------------------------------------------------------
   // 1. Settings loader & storage synchronization
@@ -159,32 +165,133 @@
     const controller = new AbortController();
     mediaControllerMap.set(media, controller);
 
-    // Apply current speed
-    applySpeedToElement(media, currentSpeed);
+    mediaRateIntentMap.set(media, {
+      interactionStartedAt: 0,
+      interactionUntil: 0,
+      pointerId: null,
+      key: '',
+      pendingRate: null,
+      finalizeTimer: null,
+      intentTimeout: null,
+      restoreTimer: null
+    });
 
-    // Create OSD overlay if video
-    if (media instanceof HTMLVideoElement && currentSettings.showOsd) {
-      ensureOsdForVideo(media, controller.signal);
-    }
+    applySpeedToElement(media, currentSpeed, false);
+
+    const clearUserRateIntent = (intent) => {
+      if (intent.intentTimeout !== null) clearTimeout(intent.intentTimeout);
+      intent.intentTimeout = null;
+      intent.interactionStartedAt = 0;
+      intent.interactionUntil = 0;
+      intent.pointerId = null;
+      intent.key = '';
+      intent.pendingRate = null;
+    };
+    const finalizeUserRateIntent = () => {
+      const intent = mediaRateIntentMap.get(media);
+      if (!intent) return;
+      const now = performance.now();
+      const heldFor = now - intent.interactionStartedAt;
+      intent.interactionUntil = now + USER_RATE_COMMIT_DELAY_MS;
+      if (intent.intentTimeout !== null) clearTimeout(intent.intentTimeout);
+      intent.intentTimeout = null;
+      intent.finalizeTimer = setTimeout(() => {
+        intent.finalizeTimer = null;
+        if (intent.pendingRate !== null) {
+          if (heldFor >= TRANSIENT_RATE_HOLD_MS) {
+            applySpeedToElement(media, currentSpeed, false);
+          } else {
+            updateCurrentSpeed(intent.pendingRate, true);
+            showOsdForVideo(media);
+          }
+        }
+        clearUserRateIntent(intent);
+      }, USER_RATE_COMMIT_DELAY_MS);
+    };
+    const beginUserRateIntent = (kind, value) => {
+      const intent = mediaRateIntentMap.get(media);
+      if (!intent || intent.pointerId !== null || intent.key) return;
+      if (intent.finalizeTimer !== null) clearTimeout(intent.finalizeTimer);
+      if (intent.restoreTimer !== null) clearTimeout(intent.restoreTimer);
+      intent.finalizeTimer = null;
+      intent.restoreTimer = null;
+      intent.interactionStartedAt = performance.now();
+      intent.interactionUntil = intent.interactionStartedAt + USER_RATE_INTENT_TIMEOUT_MS;
+      intent.pendingRate = null;
+      if (kind === 'pointer') intent.pointerId = value;
+      else intent.key = value;
+      intent.intentTimeout = setTimeout(finalizeUserRateIntent, USER_RATE_INTENT_TIMEOUT_MS);
+    };
+    const finishPointerIntent = (event) => {
+      if (!event.isTrusted) return;
+      const intent = mediaRateIntentMap.get(media);
+      if (intent?.pointerId !== event.pointerId) return;
+      finalizeUserRateIntent();
+    };
+    const finishKeyIntent = (event) => {
+      if (!event.isTrusted) return;
+      const intent = mediaRateIntentMap.get(media);
+      if (!intent || !intent.key || intent.key !== (event.code || event.key)) return;
+      finalizeUserRateIntent();
+    };
+    const cancelUserRateIntent = () => {
+      const intent = mediaRateIntentMap.get(media);
+      if (!intent || (intent.pointerId === null && !intent.key)) return;
+      if (intent.pendingRate !== null) applySpeedToElement(media, currentSpeed, false);
+      clearUserRateIntent(intent);
+    };
+    media.addEventListener('pointerdown', (event) => {
+      if (event.isTrusted) beginUserRateIntent('pointer', event.pointerId);
+    }, { capture: true, passive: true, signal: controller.signal });
+    window.addEventListener('pointerup', finishPointerIntent, { capture: true, passive: true, signal: controller.signal });
+    window.addEventListener('pointercancel', finishPointerIntent, { capture: true, passive: true, signal: controller.signal });
+    media.addEventListener('lostpointercapture', finishPointerIntent, { capture: true, passive: true, signal: controller.signal });
+    media.addEventListener('keydown', (event) => {
+      if (event.isTrusted && !event.repeat && !event.defaultPrevented) {
+        beginUserRateIntent('key', event.code || event.key);
+      }
+    }, { capture: true, passive: true, signal: controller.signal });
+    window.addEventListener('keyup', finishKeyIntent, { capture: true, passive: true, signal: controller.signal });
+    window.addEventListener('blur', cancelUserRateIntent, { passive: true, signal: controller.signal });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') cancelUserRateIntent();
+    }, { passive: true, signal: controller.signal });
 
     media.addEventListener('play', () => {
       if (!effectiveEnabled || !currentSettings.enabled) return;
-      applySpeedToElement(media, currentSpeed);
-      updateOsdForVideo(media);
+      applySpeedToElement(media, currentSpeed, false);
     }, { passive: true, signal: controller.signal });
 
     media.addEventListener('ratechange', () => {
       if (!effectiveEnabled || !currentSettings.enabled) return;
-      // If site tries to change rate and lock is enabled, re-assert our speed
-      if (currentSettings.speedLock && Math.abs(media.playbackRate - currentSpeed) > 0.01) {
-        applySpeedToElement(media, currentSpeed);
+      const intent = mediaRateIntentMap.get(media);
+      const now = performance.now();
+      const classification = SHARED.classifyVideoRateChange(
+        currentSpeed,
+        media.playbackRate,
+        Boolean(intent && now <= intent.interactionUntil)
+      );
+      if (!currentSettings.speedLock || classification === 'matched') return;
+      if (classification === 'user') {
+        intent.pendingRate = SHARED.clampVideoSpeed(media.playbackRate);
+        return;
       }
-      updateOsdForVideo(media);
+      if (intent?.restoreTimer !== null) clearTimeout(intent.restoreTimer);
+      if (intent) {
+        intent.restoreTimer = setTimeout(() => {
+          intent.restoreTimer = null;
+          if (performance.now() > intent.interactionUntil &&
+              effectiveEnabled && currentSettings.enabled &&
+              Math.abs(media.playbackRate - currentSpeed) > 0.01) {
+            applySpeedToElement(media, currentSpeed, false);
+          }
+        }, SITE_RATE_RESTORE_DELAY_MS);
+      }
     }, { passive: true, signal: controller.signal });
 
     media.addEventListener('emptied', () => {
       setTimeout(() => {
-        if (effectiveEnabled && currentSettings.enabled) applySpeedToElement(media, currentSpeed);
+        if (effectiveEnabled && currentSettings.enabled) applySpeedToElement(media, currentSpeed, false);
       }, 100);
     }, { passive: true, signal: controller.signal });
   }
@@ -200,6 +307,12 @@
       controller.abort();
       mediaControllerMap.delete(media);
     }
+    const intent = mediaRateIntentMap.get(media);
+    if (intent?.finalizeTimer !== null) clearTimeout(intent.finalizeTimer);
+    if (intent?.intentTimeout !== null) clearTimeout(intent.intentTimeout);
+    if (intent?.restoreTimer !== null) clearTimeout(intent.restoreTimer);
+    if (intent?.osdTimer !== null) clearTimeout(intent.osdTimer);
+    mediaRateIntentMap.delete(media);
     trackedMediaSet.delete(media);
   }
 
@@ -207,7 +320,7 @@
   // 3. Playback speed enforcement
   // ---------------------------------------------------------------------------
 
-  function applySpeedToElement(media, speed) {
+  function applySpeedToElement(media, speed, showOsd = false) {
     if (!media || !(media instanceof HTMLMediaElement)) return;
     const clamped = SHARED.clampVideoSpeed(speed);
     try {
@@ -216,7 +329,7 @@
         media.defaultPlaybackRate = clamped;
       }
     } catch (_) {}
-    updateOsdForVideo(media);
+    if (showOsd) showOsdForVideo(media);
   }
 
   function updateCurrentSpeed(speed, save) {
@@ -231,7 +344,7 @@
     updateCurrentSpeed(speed, save);
     for (const media of trackedMediaSet) {
       if (document.contains(media) || (media.getRootNode && media.getRootNode() instanceof ShadowRoot)) {
-        applySpeedToElement(media, currentSpeed);
+        applySpeedToElement(media, currentSpeed, save);
       } else {
         untrackMediaElement(media);
       }
@@ -242,7 +355,7 @@
     if (!effectiveEnabled || !currentSettings.enabled || mediaList.length === 0) return;
     updateCurrentSpeed(speed, save);
     for (const media of mediaList) {
-      applySpeedToElement(media, currentSpeed);
+      applySpeedToElement(media, currentSpeed, save);
     }
   }
 
@@ -264,112 +377,21 @@
   // 4. OSD (On-Screen Display) Overlay UI
   // ---------------------------------------------------------------------------
 
-  function ensureOsdForVideo(video, signal) {
+  function ensureOsdForVideo(video) {
     if (!(video instanceof HTMLVideoElement)) return;
     let osd = mediaOsdMap.get(video);
-    if (osd && osd.parentElement) return;
+    if (osd && osd.isConnected) return osd;
 
     osd = document.createElement('div');
     osd.className = 'rcow-video-osd';
-    osd.setAttribute('aria-label', 'Right-click on Web 동영상 배속 컨트롤러');
-    osd.innerHTML = `
-      <div class="rcow-osd-drag-handle">
-        <span class="rcow-osd-brand">RC</span>
-      </div>
-      <button type="button" class="rcow-osd-btn rcow-osd-btn-dec" title="배속 감소 (단축키: [)">-</button>
-      <button type="button" class="rcow-osd-text" title="현재 배속 (휠로 조절 / 클릭하여 리셋)" aria-label="현재 배속 ${SHARED.formatVideoSpeed(currentSpeed)}. 클릭하여 1.0배로 초기화">${SHARED.formatVideoSpeed(currentSpeed)}</button>
-      <button type="button" class="rcow-osd-btn rcow-osd-btn-inc" title="배속 증가 (단축키: ])">+</button>
-      <button type="button" class="rcow-osd-btn rcow-osd-btn-reset" title="1.0x 리셋 (단축키: R)">↺</button>
-      <button type="button" class="rcow-osd-btn rcow-osd-btn-close" title="OSD 숨기기 (단축키: V)">×</button>
-    `;
-
-    // Event listeners for OSD buttons
-    const decBtn = osd.querySelector('.rcow-osd-btn-dec');
-    const incBtn = osd.querySelector('.rcow-osd-btn-inc');
-    const textEl = osd.querySelector('.rcow-osd-text');
-    const resetBtn = osd.querySelector('.rcow-osd-btn-reset');
-    const closeBtn = osd.querySelector('.rcow-osd-btn-close');
-
-    decBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      adjustSpeed(-currentSettings.speedStep);
-    }, { signal });
-
-    incBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      adjustSpeed(currentSettings.speedStep);
-    }, { signal });
-
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      applySpeedToAllMedia(1.0);
-    }, { signal });
-
-    textEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      applySpeedToAllMedia(1.0);
-    }, { signal });
-
-    textEl.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const delta = e.deltaY < 0 ? 0.05 : -0.05;
-      adjustSpeed(delta);
-    }, { passive: false, signal });
-
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      currentSettings.showOsd = false;
-      updateAllOsd();
-    }, { signal });
-
-    // Drag-to-reposition logic
-    let isDragging = false;
-    let dragStartX = 0;
-    let dragStartY = 0;
-    let osdStartX = 0;
-    let osdStartY = 0;
-
-    const dragHandle = osd.querySelector('.rcow-osd-drag-handle');
-    dragHandle.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = osd.getBoundingClientRect();
-      osdStartX = rect.left;
-      osdStartY = rect.top;
-      e.preventDefault();
-    }, { signal });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      osd.style.left = `${Math.max(10, osdStartX + dx)}px`;
-      osd.style.top = `${Math.max(10, osdStartY + dy)}px`;
-      osd.style.right = 'auto';
-      osd.style.bottom = 'auto';
-    }, { signal });
-
-    window.addEventListener('mouseup', () => {
-      isDragging = false;
-    }, { signal });
-
-    // Mount OSD adjacent to video or in document.body
-    if (video.parentElement && getComputedStyle(video.parentElement).position !== 'static') {
-      video.parentElement.appendChild(osd);
-    } else {
-      document.body.appendChild(osd);
-    }
+    osd.setAttribute('role', 'status');
+    osd.setAttribute('aria-live', 'polite');
+    osd.textContent = SHARED.formatVideoSpeed(currentSpeed);
+    (document.body || document.documentElement).appendChild(osd);
 
     mediaOsdMap.set(video, osd);
     positionOsd(video, osd);
+    return osd;
   }
 
   function positionOsd(video, osd) {
@@ -379,34 +401,49 @@
       osd.style.display = 'none';
       return;
     }
-    osd.style.display = currentSettings.showOsd ? 'flex' : 'none';
-    if (!osd.style.left && !osd.style.top) {
-      osd.style.position = 'fixed';
-      osd.style.left = `${Math.max(10, rect.left + 12)}px`;
-      osd.style.top = `${Math.max(10, rect.top + 12)}px`;
-    }
+    osd.style.left = `${Math.min(window.innerWidth - 72, Math.max(8, rect.left + 12))}px`;
+    osd.style.top = `${Math.min(window.innerHeight - 40, Math.max(8, rect.top + 12))}px`;
   }
 
   function updateOsdForVideo(video) {
     if (!(video instanceof HTMLVideoElement)) return;
     const osd = mediaOsdMap.get(video);
     if (!osd) return;
-    const textEl = osd.querySelector('.rcow-osd-text');
-    if (textEl) {
-      textEl.textContent = SHARED.formatVideoSpeed(currentSpeed);
-      textEl.setAttribute('aria-label', `현재 배속 ${SHARED.formatVideoSpeed(currentSpeed)}. 클릭하여 1.0배로 초기화`);
-    }
+    osd.textContent = SHARED.formatVideoSpeed(currentSpeed);
     positionOsd(video, osd);
+  }
+
+  function showOsdForVideo(video) {
+    if (!currentSettings.showOsd || !(video instanceof HTMLVideoElement)) return;
+    const osd = ensureOsdForVideo(video);
+    if (!osd) return;
+    updateOsdForVideo(video);
+    osd.classList.remove('rcow-video-osd-visible');
+    void osd.offsetWidth;
+    osd.classList.add('rcow-video-osd-visible');
+    const intent = mediaRateIntentMap.get(video);
+    if (intent?.osdTimer) clearTimeout(intent.osdTimer);
+    if (intent) {
+      intent.osdTimer = setTimeout(() => {
+        intent.osdTimer = null;
+        osd.remove();
+        if (mediaOsdMap.get(video) === osd) {
+          mediaOsdMap.delete(video);
+        }
+      }, OSD_LIFETIME_MS);
+    }
   }
 
   function updateAllOsd() {
     for (const media of trackedMediaSet) {
       if (media instanceof HTMLVideoElement) {
-        if (currentSettings.showOsd && !mediaOsdMap.has(media)) {
-          const controller = mediaControllerMap.get(media);
-          if (controller) ensureOsdForVideo(media, controller.signal);
+        const osd = mediaOsdMap.get(media);
+        if (!currentSettings.showOsd && osd) {
+          osd.remove();
+          mediaOsdMap.delete(media);
+        } else if (osd) {
+          updateOsdForVideo(media);
         }
-        updateOsdForVideo(media);
       }
     }
   }
@@ -422,17 +459,9 @@
     if (event.ctrlKey || event.altKey || event.metaKey) return;
 
     const targetElement = event.target instanceof Element
-      ? event.target.closest('video, audio, .rcow-video-osd')
+      ? event.target.closest('video, audio')
       : null;
     let focusedMedia = targetElement instanceof HTMLMediaElement ? targetElement : null;
-    if (!focusedMedia && targetElement) {
-      for (const [media, osd] of mediaOsdMap) {
-        if (osd === targetElement) {
-          focusedMedia = media;
-          break;
-        }
-      }
-    }
     const playingMedia = Array.from(trackedMediaSet).filter((media) => (
       !media.paused && !media.ended && document.contains(media)
     ));
@@ -522,9 +551,6 @@
     if (runtimeActive) return;
     runtimeActive = true;
     window.addEventListener('keydown', handleKeydown, { capture: true, passive: false });
-    window.addEventListener('scroll', updateAllOsd, { passive: true });
-    window.addEventListener('resize', updateAllOsd, { passive: true });
-    document.addEventListener('fullscreenchange', updateAllOsd, { passive: true });
     document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
     mediaObserver = new MutationObserver(scanMediaElements);
     mediaObserver.observe(document.documentElement || document, {
@@ -547,9 +573,6 @@
     if (runtimeActive) {
       runtimeActive = false;
       window.removeEventListener('keydown', handleKeydown, true);
-      window.removeEventListener('scroll', updateAllOsd);
-      window.removeEventListener('resize', updateAllOsd);
-      document.removeEventListener('fullscreenchange', updateAllOsd);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
     if (mediaObserver) {

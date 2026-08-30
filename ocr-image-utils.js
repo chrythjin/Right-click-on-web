@@ -36,6 +36,11 @@
   const MAX_DESKEW_ANGLE = 5;
   const DESKEW_ANALYSIS_MAX_EDGE = 256;
   const PREPROCESSING_PROFILES = Object.freeze(['off', 'auto', 'grayscale', 'invert']);
+  const DEFAULT_PAGE_SEGMENTATION_MODE = '6';
+  const PAGE_SEGMENTATION_MODES = Object.freeze({
+    singleLine: '7',
+    sparseText: '11'
+  });
   const BASELINE_PREPROCESSING = Object.freeze({
     profile: 'off',
     upscale: 1,
@@ -341,6 +346,16 @@
     return Number.isFinite(confidence?.average) && confidence.average < OCR_CONFIDENCE_THRESHOLD;
   }
 
+  function resolvePageSegmentationRetry(width, height) {
+    if (!isSafePixelDimensions(width, height)) return null;
+    const aspectRatio = width / height;
+    if (aspectRatio >= 4) return PAGE_SEGMENTATION_MODES.singleLine;
+    if (aspectRatio <= 0.5 || (aspectRatio <= 2 && width * height >= 250000)) {
+      return PAGE_SEGMENTATION_MODES.sparseText;
+    }
+    return null;
+  }
+
   function chooseRecognitionResult(firstData, secondData) {
     if (!secondData) return { data: firstData, attempt: 1 };
     const firstConfidence = summarizeOcrConfidence(firstData?.words).average;
@@ -515,7 +530,9 @@
     createPreprocessingPlan,
     normalizePreprocessing,
     PREPROCESSING_PROFILES,
+    DEFAULT_PAGE_SEGMENTATION_MODE,
     shouldRetryRecognition,
+    resolvePageSegmentationRetry,
     chooseRecognitionResult,
     recognizeWithCandidates,
     summarizeOcrConfidence,
